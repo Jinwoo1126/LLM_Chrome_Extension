@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>LLM Chat</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="highlight.css">
+</head>
+<body>
+  <div class="container">
+    <div class="chat-container">
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="input-container">
+        <input type="text" id="user-input" placeholder="Type your message here...">
+        <button id="send-button">Send</button>
+      </div>
+    </div>
+    <div class="settings">
+      <input type="text" id="api-url" placeholder="Enter model name (e.g., Qwen/Qwen2.5-Coder-7B-Instruct-AWQ)">
+      <button id="save-settings">Save Settings</button>
+    </div>
+  </div>
+  <script src="marked.min.js"></script>
+  <script src="highlight.min.js"></script>
+  <script>
+    // Verify that required libraries are loaded
+    if (typeof marked === 'undefined') {
+      console.error('marked library not loaded');
+    }
+    if (typeof hljs === 'undefined') {
+      console.error('highlight.js library not loaded');
+    }
+  </script>
+  <script src="popup.js"></script>
+</body>
+</html> 
