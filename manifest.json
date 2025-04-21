@@ -4,7 +4,9 @@
   "version": "1.0",
   "description": "Chat with LLM through vLLM API",
   "permissions": [
-    "storage"
+    "storage",
+    "activeTab",
+    "tabs"
   ],
   "web_accessible_resources": [
     {
@@ -16,10 +18,16 @@
       "matches": ["<all_urls>"]
     }
   ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
   "action": {
     "default_popup": "popup.html"
   },
   "background": {
     "service_worker": "background.js"
   }
-} 
+}

@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <title>LLM Chat</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="highlight.css">
@@ -9,8 +10,13 @@
   <div class="container">
     <div class="chat-container">
       <div id="chat-messages" class="chat-messages"></div>
+      <div id="selection-info" class="selection-info hidden">
+        <div class="selection-text" id="selection-preview"></div>
+        <button id="use-selection" title="선택한 텍스트만 사용">📋 Use Selection</button>
+      </div>
       <div class="input-container">
         <input type="text" id="user-input" placeholder="Type your message here...">
+        <button id="include-page-info" title="Include current page info">📄</button>
         <button id="send-button">Send</button>
       </div>
     </div>
@@ -32,4 +38,4 @@
   </script>
   <script src="popup.js"></script>
 </body>
-</html> 
+</html>

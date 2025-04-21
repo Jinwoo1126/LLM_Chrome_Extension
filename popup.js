@@ -16,8 +16,19 @@ document.addEventListener('DOMContentLoaded', function() {
   const chatMessages = document.getElementById('chat-messages');
   const userInput = document.getElementById('user-input');
   const sendButton = document.getElementById('send-button');
+  const includePageInfoButton = document.getElementById('include-page-info');
   const apiUrlInput = document.getElementById('api-url');
   const saveSettingsButton = document.getElementById('save-settings');
+  
+  // New elements for selection display
+  const selectionInfo = document.getElementById('selection-info');
+  const selectionPreview = document.getElementById('selection-preview');
+  const useSelectionButton = document.getElementById('use-selection');
+  
+  // Current selection state
+  let currentSelection = '';
+  // New flag to track if selection is stored for use
+  let isSelectionStored = false;
 
   // Configure marked
   marked.setOptions({
@@ -53,6 +64,135 @@ document.addEventListener('DOMContentLoaded', function() {
     }, function() {
       alert('Settings saved!');
     });
+  });
+
+  // Check for selected text when popup opens
+  function checkForSelection() {
+    chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
+      if (response && response.selectedText) {
+        currentSelection = response.selectedText;
+        // If text is selected, show it in the UI
+        updateSelectionUI(currentSelection);
+      }
+    });
+  }
+  
+  // Update the UI to show selected text
+  function updateSelectionUI(text) {
+    if (text && text.trim().length > 0) {
+      // Truncate if too long
+      const maxPreviewLength = 150;
+      const previewText = text.length > maxPreviewLength 
+        ? text.substring(0, maxPreviewLength) + '...' 
+        : text;
+      
+      // Update and show the selection UI
+      selectionPreview.textContent = previewText;
+      selectionInfo.classList.remove('hidden');
+      
+      // Reset the selection stored status visual indicator
+      useSelectionButton.textContent = '📋 Use Selection';
+      useSelectionButton.classList.remove('selection-stored');
+    } else {
+      // Hide the selection UI if no selection
+      selectionInfo.classList.add('hidden');
+    }
+    
+    // Reset selection stored flag when selection changes
+    isSelectionStored = false;
+  }
+  
+  // Handle the use selection button
+  useSelectionButton.addEventListener('click', function() {
+    if (currentSelection) {
+      // Instead of adding to input, just toggle the internal flag
+      isSelectionStored = !isSelectionStored;
+      
+      // Provide visual feedback
+      if (isSelectionStored) {
+        useSelectionButton.textContent = '✅ Selection Ready';
+        useSelectionButton.classList.add('selection-stored');
+      } else {
+        useSelectionButton.textContent = '📋 Use Selection';
+        useSelectionButton.classList.remove('selection-stored');
+      }
+    }
+  });
+
+  // Fetch current page information
+  async function getCurrentPageInfo() {
+    return new Promise((resolve) => {
+      chrome.runtime.sendMessage({ action: 'getCurrentPageInfo' }, (response) => {
+        console.log('Page info received:', response);
+        
+        // If we received selection info, update UI
+        if (response && response.selectedText) {
+          currentSelection = response.selectedText;
+          updateSelectionUI(currentSelection);
+        }
+        
+        if (response.error) {
+          console.error('Error getting page info:', response.error);
+          // If we have fallback info, use that
+          if (response.fallbackInfo) {
+            resolve(response.fallbackInfo);
+          } else {
+            resolve({ title: 'Unknown page', url: 'Unknown URL' });
+          }
+        } else {
+          resolve(response);
+        }
+      });
+    });
+  }
+
+  // Handle include page info button click
+  includePageInfoButton.addEventListener('click', async function() {
+    console.log('Include page info button clicked');
+    
+    // Show loading state
+    includePageInfoButton.disabled = true;
+    includePageInfoButton.textContent = '⌛';
+    
+    try {
+      const pageInfo = await getCurrentPageInfo();
+      
+      let pageInfoText = `Current page: "${pageInfo.title}"\nURL: ${pageInfo.url}\n`;
+      
+      // Include description if available
+      if (pageInfo.description && pageInfo.description.trim()) {
+        pageInfoText += `\nDescription: ${pageInfo.description}\n`;
+      }
+      
+      // Include selected text if available - 한글 텍스트를 영어로 변경
+      if (pageInfo.selectedText && pageInfo.selectedText.trim()) {
+        pageInfoText += `\nSelected text: "${pageInfo.selectedText}"\n`;
+      }
+      // Include a brief excerpt of main content if available
+      else if (pageInfo.mainContent && pageInfo.mainContent.trim()) {
+        // Limit to a short preview
+        const contentPreview = pageInfo.mainContent.substring(0, 300) + 
+                              (pageInfo.mainContent.length > 300 ? '...' : '');
+        pageInfoText += `\nPage content excerpt: "${contentPreview}"\n`;
+      }
+      
+      // Add to current input or create new input
+      if (userInput.value.trim()) {
+        userInput.value += '\n\n' + pageInfoText;
+      } else {
+        userInput.value = pageInfoText;
+      }
+      
+      // Focus the input field
+      userInput.focus();
+    } catch (error) {
+      console.error('Error including page info:', error);
+      alert('Failed to get page information. Please try again.');
+    } finally {
+      // Reset button state
+      includePageInfoButton.disabled = false;
+      includePageInfoButton.textContent = '📄';
+    }
   });
 
   // Send message to LLM with streaming
@@ -157,7 +297,25 @@ document.addEventListener('DOMContentLoaded', function() {
   // Handle send button click
   sendButton.addEventListener('click', async function() {
     console.log('Send button clicked');
-    const message = userInput.value.trim();
+    let message = userInput.value.trim();
+    
+    // If selection is stored, add it to the message internally
+    if (isSelectionStored && currentSelection) {
+      const formattedSelection = `Selected text: "${currentSelection}"`;
+      
+      // Add selection to message
+      if (message) {
+        message = message + '\n\n' + formattedSelection;
+      } else {
+        message = formattedSelection;
+      }
+      
+      // Reset selection stored state after using it
+      isSelectionStored = false;
+      useSelectionButton.textContent = '📋 Use Selection';
+      useSelectionButton.classList.remove('selection-stored');
+    }
+    
     if (message) {
       addMessage(message, true);
       userInput.value = '';
@@ -172,4 +330,10 @@ document.addEventListener('DOMContentLoaded', function() {
       sendButton.click();
     }
   });
-}); 
+
+  // Check for selection when popup opens
+  checkForSelection();
+  
+  // Also fetch page info when popup opens to update selection UI
+  getCurrentPageInfo();
+});
