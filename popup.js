@@ -71,6 +71,7 @@ document.addEventListener('DOMContentLoaded', function() {
     chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
       if (response && response.selectedText) {
         currentSelection = response.selectedText;
+        console.log('Selection received:', currentSelection);
         // If text is selected, show it in the UI
         updateSelectionUI(currentSelection);
       }
@@ -79,6 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Update the UI to show selected text
   function updateSelectionUI(text) {
+    console.log('Updating selection UI with:', text);
     if (text && text.trim().length > 0) {
       // Truncate if too long
       const maxPreviewLength = 150;
@@ -90,16 +92,18 @@ document.addEventListener('DOMContentLoaded', function() {
       selectionPreview.textContent = previewText;
       selectionInfo.classList.remove('hidden');
       
-      // Reset the selection stored status visual indicator
-      useSelectionButton.textContent = '📋 Use Selection';
-      useSelectionButton.classList.remove('selection-stored');
+      // 버튼 상태를 변경하지 않고 유지
+      // 이전에는 항상 'Use Selection'으로 초기화했었음
     } else {
       // Hide the selection UI if no selection
       selectionInfo.classList.add('hidden');
+      console.log('No selection to show, hiding UI');
+      
+      // 선택 영역이 없어진 경우에만 저장 상태 초기화
+      isSelectionStored = false;
+      useSelectionButton.textContent = '📋 Use Selection';
+      useSelectionButton.classList.remove('selection-stored');
     }
-    
-    // Reset selection stored flag when selection changes
-    isSelectionStored = false;
   }
   
   // Handle the use selection button
@@ -298,16 +302,31 @@ document.addEventListener('DOMContentLoaded', function() {
   sendButton.addEventListener('click', async function() {
     console.log('Send button clicked');
     let message = userInput.value.trim();
+    let displayMessage = message; // 화면에 표시할 메시지
     
     // If selection is stored, add it to the message internally
     if (isSelectionStored && currentSelection) {
-      const formattedSelection = `Selected text: "${currentSelection}"`;
+      // UI에 표시되는 메시지용 간략한 형식
+      let formattedDisplaySelection;
+      const maxLength = 50; // 표시할 최대 길이
       
-      // Add selection to message
-      if (message) {
-        message = message + '\n\n' + formattedSelection;
+      if (currentSelection.length > maxLength) {
+        // 선택 텍스트가 길 경우 축약 표시 (UI용)
+        formattedDisplaySelection = `Selected text: "${currentSelection.substring(0, maxLength)}..." (${currentSelection.length} chars)`;
       } else {
-        message = formattedSelection;
+        formattedDisplaySelection = `Selected text: "${currentSelection}"`;
+      }
+      
+      // LLM에 보내는 실제 메시지에는 전체 선택 텍스트를 포함
+      const formattedFullSelection = `Selected text: "${currentSelection}"`;
+      
+      // Add selection to messages
+      if (message) {
+        displayMessage = message + '\n\n' + formattedDisplaySelection; // UI 표시용
+        message = message + '\n\n' + formattedFullSelection; // LLM 전송용
+      } else {
+        displayMessage = formattedDisplaySelection; // UI 표시용
+        message = formattedFullSelection; // LLM 전송용
       }
       
       // Reset selection stored state after using it
@@ -317,9 +336,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     if (message) {
-      addMessage(message, true);
+      // UI에는 간략한 버전 표시, 실제 전송은 전체 내용
+      addMessage(displayMessage, true);
       userInput.value = '';
-      await sendMessage(message);
+      await sendMessage(message); // 전체 내용 전송
     }
   });
 
@@ -335,5 +355,28 @@ document.addEventListener('DOMContentLoaded', function() {
   checkForSelection();
   
   // Also fetch page info when popup opens to update selection UI
+  getCurrentPageInfo();
+  
+  // Check for selection changes more frequently
+  // This adds real-time monitoring for selections while popup is open
+  function setupSelectionMonitoring() {
+    // Check for selection immediately when popup opens
+    checkForSelection();
+    
+    // Poll for selection changes every second while popup is open
+    const selectionInterval = setInterval(() => {
+      checkForSelection();
+    }, 1000);
+    
+    // Clean up interval when popup closes
+    window.addEventListener('unload', () => {
+      clearInterval(selectionInterval);
+    });
+  }
+  
+  // Initialize selection monitoring
+  setupSelectionMonitoring();
+  
+  // Also fetch page info when popup opens
   getCurrentPageInfo();
 });
