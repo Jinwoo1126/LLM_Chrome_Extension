@@ -5,6 +5,52 @@ console.log('Background script loaded');
 let currentPageInfo = null;
 let currentSelection = '';
 
+// Create context menu items when extension is installed or updated
+chrome.runtime.onInstalled.addListener(() => {
+  // Create a parent menu item
+  chrome.contextMenus.create({
+    id: 'llm-extension',
+    title: 'LLM Chat Extension',
+    contexts: ['all']
+  });
+
+  // Create a menu item for asking about the current page
+  chrome.contextMenus.create({
+    id: 'ask-about-page',
+    parentId: 'llm-extension',
+    title: 'Ask LLM about this page',
+    contexts: ['page']
+  });
+
+  // Create a menu item for asking about selected text
+  chrome.contextMenus.create({
+    id: 'ask-about-selection',
+    parentId: 'llm-extension',
+    title: 'Ask LLM about selection',
+    contexts: ['selection']
+  });
+});
+
+// Handle context menu clicks
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'ask-about-page') {
+    // Open popup with page info
+    chrome.storage.local.set({ 'contextAction': 'page' }, () => {
+      chrome.action.openPopup();
+    });
+  } 
+  else if (info.menuItemId === 'ask-about-selection') {
+    // Save the selection and open popup
+    currentSelection = info.selectionText || '';
+    chrome.storage.local.set({ 
+      'contextAction': 'selection',
+      'contextSelection': currentSelection 
+    }, () => {
+      chrome.action.openPopup();
+    });
+  }
+});
+
 // Listen for messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Message received in background:', message);
@@ -87,6 +133,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
     });
     
+    return true;
+  }
+
+  // New message handler for checking context actions
+  if (message.action === 'checkContextAction') {
+    chrome.storage.local.get(['contextAction', 'contextSelection'], (result) => {
+      if (result.contextAction) {
+        // Send back the context action and clear it
+        sendResponse({ 
+          action: result.contextAction,
+          selection: result.contextSelection || currentSelection 
+        });
+        
+        // Clear the stored context action after it's been used
+        chrome.storage.local.remove(['contextAction', 'contextSelection']);
+      } else {
+        sendResponse({ action: null });
+      }
+    });
     return true;
   }
 });
