@@ -34,19 +34,37 @@ chrome.runtime.onInstalled.addListener(() => {
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'ask-about-page') {
-    // Open popup with page info
-    chrome.storage.local.set({ 'contextAction': 'page' }, () => {
-      chrome.action.openPopup();
+    // 탭 ID를 저장하고 확장 프로그램 팝업을 직접 열기
+    chrome.storage.local.set({ 
+      'contextAction': 'page',
+      'activeTabId': tab.id 
+    }, () => {
+      // 새 창에서 팝업 HTML을 열기
+      chrome.windows.create({
+        url: chrome.runtime.getURL('popup.html'),
+        type: 'popup',
+        width: 400,
+        height: 600,
+        focused: true
+      });
     });
   } 
   else if (info.menuItemId === 'ask-about-selection') {
-    // Save the selection and open popup
+    // 선택된 텍스트와 탭 ID를 저장하고 확장 프로그램 팝업을 직접 열기
     currentSelection = info.selectionText || '';
     chrome.storage.local.set({ 
       'contextAction': 'selection',
-      'contextSelection': currentSelection 
+      'contextSelection': currentSelection,
+      'activeTabId': tab.id
     }, () => {
-      chrome.action.openPopup();
+      // 새 창에서 팝업 HTML을 열기
+      chrome.windows.create({
+        url: chrome.runtime.getURL('popup.html'),
+        type: 'popup',
+        width: 400,
+        height: 600,
+        focused: true
+      });
     });
   }
 });
@@ -69,41 +87,67 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'getCurrentPageInfo') {
     // Query for the active tab
     chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs.length === 0) {
-        sendResponse({ error: 'No active tab found' });
-        return;
-      }
-      
-      const activeTab = tabs[0];
-      
-      // Send message to content script in the active tab
-      chrome.tabs.sendMessage(
-        activeTab.id, 
-        { action: 'getPageInfo' }, 
-        function(response) {
-          if (chrome.runtime.lastError) {
-            console.error(chrome.runtime.lastError);
-            sendResponse({ 
-              error: 'Could not connect to the page',
-              fallbackInfo: {
-                title: activeTab.title,
-                url: activeTab.url,
-                selectedText: currentSelection
-              }
-            });
-          } else {
-            // Add any tracked selection if needed
-            if (!response.selectedText && currentSelection) {
-              response.selectedText = currentSelection;
-              response.hasSelection = true;
-            }
-            
-            // Save page info and send it back to popup
-            currentPageInfo = response;
-            sendResponse(response);
-          }
+      // 저장된 activeTabId가 있으면 해당 탭 정보를 사용
+      chrome.storage.local.get(['activeTabId'], function(result) {
+        let activeTabId = result.activeTabId;
+        
+        // 탭이 발견되지 않거나 activeTabId가 없으면 현재 활성 탭 사용
+        if (tabs.length === 0 && !activeTabId) {
+          sendResponse({ error: 'No active tab found' });
+          return;
         }
-      );
+        
+        // 활성 탭 또는 저장된 탭 ID를 사용
+        const activeTab = activeTabId ? { id: activeTabId } : tabs[0];
+        
+        // 사용 후 저장된 탭 ID 삭제
+        if (activeTabId) {
+          chrome.storage.local.remove(['activeTabId']);
+        }
+        
+        // Send message to content script in the active tab
+        chrome.tabs.sendMessage(
+          activeTab.id, 
+          { action: 'getPageInfo' }, 
+          function(response) {
+            if (chrome.runtime.lastError) {
+              console.error(chrome.runtime.lastError);
+              // Get tab info directly if content script fails
+              chrome.tabs.get(activeTab.id, function(tab) {
+                if (chrome.runtime.lastError) {
+                  sendResponse({ 
+                    error: 'Could not connect to the page',
+                    fallbackInfo: {
+                      title: 'Unknown page',
+                      url: 'Unknown URL',
+                      selectedText: currentSelection
+                    }
+                  });
+                } else {
+                  sendResponse({ 
+                    error: 'Could not connect to the page',
+                    fallbackInfo: {
+                      title: tab.title,
+                      url: tab.url,
+                      selectedText: currentSelection
+                    }
+                  });
+                }
+              });
+            } else {
+              // Add any tracked selection if needed
+              if (!response.selectedText && currentSelection) {
+                response.selectedText = currentSelection;
+                response.hasSelection = true;
+              }
+              
+              // Save page info and send it back to popup
+              currentPageInfo = response;
+              sendResponse(response);
+            }
+          }
+        );
+      });
     });
     
     // Return true to indicate we'll respond asynchronously
@@ -112,25 +156,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   // When popup requests just the selected text
   if (message.action === 'getSelectedText') {
-    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-      if (tabs.length === 0) {
-        sendResponse({ selectedText: currentSelection });
-        return;
-      }
+    chrome.storage.local.get(['activeTabId'], function(result) {
+      let activeTabId = result.activeTabId;
       
-      const activeTab = tabs[0];
-      
-      chrome.tabs.sendMessage(
-        activeTab.id,
-        { action: 'getSelectedText' },
-        function(response) {
-          if (chrome.runtime.lastError) {
-            sendResponse({ selectedText: currentSelection });
-          } else {
-            sendResponse(response);
-          }
+      chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+        if (tabs.length === 0 && !activeTabId) {
+          sendResponse({ selectedText: currentSelection });
+          return;
         }
-      );
+        
+        const activeTab = activeTabId ? { id: activeTabId } : tabs[0];
+        
+        chrome.tabs.sendMessage(
+          activeTab.id,
+          { action: 'getSelectedText' },
+          function(response) {
+            if (chrome.runtime.lastError) {
+              sendResponse({ selectedText: currentSelection });
+            } else {
+              sendResponse(response);
+            }
+          }
+        );
+      });
     });
     
     return true;
