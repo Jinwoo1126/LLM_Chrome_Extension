@@ -351,11 +351,47 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
+  // New function to handle actions from context menu
+  async function handleContextAction() {
+    chrome.runtime.sendMessage({ action: 'checkContextAction' }, async (response) => {
+      if (response && response.action) {
+        console.log('Context action detected:', response.action);
+        
+        if (response.action === 'page') {
+          // Automatically include page info
+          includePageInfoButton.click();
+        } 
+        else if (response.action === 'selection' && response.selection) {
+          // Set the selection and mark it as stored
+          currentSelection = response.selection;
+          updateSelectionUI(currentSelection);
+          
+          // Auto-store the selection
+          isSelectionStored = true;
+          useSelectionButton.textContent = '✅ Selection Ready';
+          useSelectionButton.classList.add('selection-stored');
+          
+          // Focus the input field for the user to type a question
+          userInput.focus();
+          
+          // Optional: Pre-fill with a prompt about the selection
+          if (!userInput.value) {
+            userInput.value = "Tell me about this selection:";
+            userInput.setSelectionRange(userInput.value.length, userInput.value.length);
+          }
+        }
+      }
+    });
+  }
+
   // Check for selection when popup opens
   checkForSelection();
   
   // Also fetch page info when popup opens to update selection UI
   getCurrentPageInfo();
+  
+  // Check for context menu actions when popup opens
+  handleContextAction();
   
   // Check for selection changes more frequently
   // This adds real-time monitoring for selections while popup is open
