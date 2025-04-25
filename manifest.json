@@ -6,7 +6,9 @@
   "permissions": [
     "storage",
     "activeTab",
-    "tabs"
+    "tabs",
+    "contextMenus",
+    "windows"
   ],
   "web_accessible_resources": [
     {
