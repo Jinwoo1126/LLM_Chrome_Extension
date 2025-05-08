@@ -21,6 +21,14 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Ask LLM about selection',
     contexts: ['selection']
   });
+
+  // Create a menu item for opening in side panel
+  chrome.contextMenus.create({
+    id: 'open-in-side-panel',
+    parentId: 'llm-extension',
+    title: 'Open in Side Panel',
+    contexts: ['selection']
+  });
 });
 
 // Handle context menu clicks
@@ -41,6 +49,17 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
         height: 600,
         focused: true
       });
+    });
+  } else if (info.menuItemId === 'open-in-side-panel') {
+    // 선택된 텍스트와 탭 ID를 저장하고 사이드패널 열기
+    currentSelection = info.selectionText || '';
+    chrome.storage.local.set({ 
+      'contextAction': 'selection',
+      'contextSelection': currentSelection,
+      'activeTabId': tab.id
+    }, () => {
+      // 사이드패널 열기
+      chrome.sidePanel.open({ windowId: tab.windowId });
     });
   }
 });
@@ -67,48 +86,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.get(['activeTabId'], function(result) {
         let activeTabId = result.activeTabId;
         
-        // 탭이 발견되지 않거나 activeTabId가 없으면 현재 활성 탭 사용
         if (tabs.length === 0 && !activeTabId) {
-          sendResponse({ error: 'No active tab found' });
+          sendResponse({ 
+            title: 'No active tab',
+            url: '',
+            description: '',
+            selectedText: currentSelection,
+            mainContent: '',
+            hasSelection: currentSelection.length > 0
+          });
           return;
         }
         
-        // 활성 탭 또는 저장된 탭 ID를 사용
         const activeTab = activeTabId ? { id: activeTabId } : tabs[0];
         
-        // 사용 후 저장된 탭 ID 삭제
-        if (activeTabId) {
-          chrome.storage.local.remove(['activeTabId']);
-        }
-        
-        // Send message to content script in the active tab
         chrome.tabs.sendMessage(
-          activeTab.id, 
-          { action: 'getPageInfo' }, 
+          activeTab.id,
+          { action: 'getPageInfo' },
           function(response) {
             if (chrome.runtime.lastError) {
-              console.error(chrome.runtime.lastError);
-              // Get tab info directly if content script fails
-              chrome.tabs.get(activeTab.id, function(tab) {
-                if (chrome.runtime.lastError) {
-                  sendResponse({ 
-                    error: 'Could not connect to the page',
-                    fallbackInfo: {
-                      title: 'Unknown page',
-                      url: 'Unknown URL',
-                      selectedText: currentSelection
-                    }
-                  });
-                } else {
-                  sendResponse({ 
-                    error: 'Could not connect to the page',
-                    fallbackInfo: {
-                      title: tab.title,
-                      url: tab.url,
-                      selectedText: currentSelection
-                    }
-                  });
-                }
+              console.error('Error getting page info:', chrome.runtime.lastError);
+              sendResponse({ 
+                title: 'Error getting page info',
+                url: '',
+                description: '',
+                selectedText: currentSelection,
+                mainContent: '',
+                hasSelection: currentSelection.length > 0
               });
             } else {
               // Add any tracked selection if needed
