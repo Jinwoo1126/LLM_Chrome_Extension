@@ -48,22 +48,68 @@ document.addEventListener('DOMContentLoaded', function() {
     apiKey: 'EMPTY'
   };
 
+  // Model configurations
+  const modelConfigs = {
+    vllm: [
+      { id: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ', name: 'Qwen 2.5 Coder 7B' },
+      { id: '...', name: '...' },
+      // Add more vLLM models here
+    ],
+    ollama: [
+      { id: 'gemma3', name: 'Gemma 3' },
+      { id: 'llama4', name: 'Llama 4' }
+    ]
+  };
+
   // Load saved settings or use default
-  chrome.storage.local.get(['model', 'apiKey'], function(result) {
+  chrome.storage.local.get(['model', 'apiKey', 'apiType'], function(result) {
     console.log('Loaded settings:', result);
-    apiUrlInput.value = result.model || defaultApiConfig.model;
+    const modelSelect = document.getElementById('model-select');
+    const apiTypeSelect = document.getElementById('api-type-select');
+    
+    // Set API type
+    if (result.apiType) {
+      apiTypeSelect.value = result.apiType;
+      updateModelOptions(result.apiType);
+    }
+    
+    // Set model
+    if (result.model) {
+      modelSelect.value = result.model;
+    }
   });
+
+  // Update model options based on API type
+  function updateModelOptions(apiType) {
+    const modelSelect = document.getElementById('model-select');
+    modelSelect.innerHTML = '';
+    
+    const models = modelConfigs[apiType] || [];
+    models.forEach(model => {
+      const option = document.createElement('option');
+      option.value = model.id;
+      option.textContent = model.name;
+      modelSelect.appendChild(option);
+    });
+  }
 
   // Save settings
   saveSettingsButton.addEventListener('click', function() {
-    const model = apiUrlInput.value;
-    console.log('Saving settings:', { model });
+    const model = document.getElementById('model-select').value;
+    const apiType = document.getElementById('api-type-select').value;
+    console.log('Saving settings:', { model, apiType });
     chrome.storage.local.set({ 
       model: model,
+      apiType: apiType,
       apiKey: defaultApiConfig.apiKey
     }, function() {
       alert('Settings saved!');
     });
+  });
+
+  // Handle API type change
+  document.getElementById('api-type-select').addEventListener('change', function(e) {
+    updateModelOptions(e.target.value);
   });
 
   // Check for selected text when popup opens
@@ -202,8 +248,16 @@ document.addEventListener('DOMContentLoaded', function() {
   // Send message to LLM with streaming
   async function sendMessage(message) {
     console.log('Sending message:', message);
-    const model = apiUrlInput.value || defaultApiConfig.model;
-    const apiUrl = `${defaultApiConfig.apiBase}/chat/completions`;
+    const model = document.getElementById('model-select').value;
+    const apiType = document.getElementById('api-type-select').value;
+    
+    let apiUrl;
+    if (apiType === 'ollama') {
+      apiUrl = 'http://localhost:11434/api/chat';
+    } else {
+      apiUrl = `${defaultApiConfig.apiBase}/chat/completions`;
+    }
+    
     console.log('API URL:', apiUrl);
     
     try {
@@ -211,9 +265,18 @@ document.addEventListener('DOMContentLoaded', function() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${defaultApiConfig.apiKey}`
+          'Authorization': apiType === 'ollama' ? '' : `Bearer ${defaultApiConfig.apiKey}`
         },
-        body: JSON.stringify({
+        body: JSON.stringify(apiType === 'ollama' ? {
+          model: model,
+          messages: [
+            {
+              role: 'user',
+              content: message
+            }
+          ],
+          stream: true
+        } : {
           model: model,
           messages: [
             {
@@ -246,30 +309,43 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const chunk = decoder.decode(value);
         console.log('Received chunk:', chunk);
-        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        
+        try {
+          if (apiType === 'ollama') {
+            // Handle Ollama's raw JSON response
+            const parsed = JSON.parse(chunk);
+            const content = parsed.message?.content || '';
+            if (content) {
+              assistantMessage += content;
+              messageDiv.innerHTML = marked.parse(assistantMessage);
+              messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+          } else {
+            // Handle vLLM's SSE format
+            const lines = chunk.split('\n').filter(line => line.trim() !== '');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6);
+                if (data === '[DONE]') continue;
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') continue;
-
-            try {
-              const parsed = JSON.parse(data);
-              const content = parsed.choices[0].delta.content;
-              if (content) {
-                assistantMessage += content;
-                // Render markdown and update the message
-                messageDiv.innerHTML = marked.parse(assistantMessage);
-                // Apply syntax highlighting to code blocks
-                messageDiv.querySelectorAll('pre code').forEach((block) => {
-                  hljs.highlightElement(block);
-                });
-                chatMessages.scrollTop = chatMessages.scrollHeight;
+                const parsed = JSON.parse(data);
+                const content = parsed.choices[0].delta.content;
+                if (content) {
+                  assistantMessage += content;
+                  messageDiv.innerHTML = marked.parse(assistantMessage);
+                  messageDiv.querySelectorAll('pre code').forEach((block) => {
+                    hljs.highlightElement(block);
+                  });
+                  chatMessages.scrollTop = chatMessages.scrollHeight;
+                }
               }
-            } catch (e) {
-              console.error('Error parsing streaming response:', e);
             }
           }
+        } catch (e) {
+          console.error('Error parsing streaming response:', e);
         }
       }
 
