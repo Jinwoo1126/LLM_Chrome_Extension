@@ -112,23 +112,6 @@ button:hover {
   background-color: #0056b3;
 }
 
-/* Include page info button */
-#include-page-info {
-  padding: 8px;
-  min-width: 36px;
-  font-size: 16px;
-  background-color: #6c757d;
-}
-
-#include-page-info:hover {
-  background-color: #5a6268;
-}
-
-#include-page-info:disabled {
-  background-color: #adb5bd;
-  cursor: wait;
-}
-
 /* Selection text display */
 .selection-info {
   background-color: #f8f9fa;
@@ -156,12 +139,28 @@ button:hover {
   word-break: break-word;
 }
 
+.selection-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 #use-selection {
-  align-self: flex-end;
   font-size: 12px;
   padding: 4px 8px;
   background-color: #28a745;
   transition: background-color 0.3s ease;
+}
+
+#reset-selection {
+  font-size: 12px;
+  padding: 4px 8px;
+  background-color: #dc3545;
+  transition: background-color 0.3s ease;
+}
+
+#reset-selection:hover {
+  background-color: #c82333;
 }
 
 #use-selection:hover {
@@ -186,43 +185,4 @@ button:hover {
   100% {
     transform: scale(1);
   }
-}
-
-.settings {
-  padding: 10px;
-  border-top: 1px solid #ccc;
-}
-
-.settings-row {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.settings select {
-  flex: 1;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background-color: white;
-  font-size: 14px;
-}
-
-.settings select:focus {
-  outline: none;
-  border-color: #007bff;
-}
-
-#save-settings {
-  width: 100%;
-  padding: 8px;
-  background-color: #007bff;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-#save-settings:hover {
-  background-color: #0056b3;
 }

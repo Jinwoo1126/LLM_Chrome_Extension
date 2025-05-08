@@ -12,25 +12,15 @@
       <div id="chat-messages" class="chat-messages"></div>
       <div id="selection-info" class="selection-info hidden">
         <div class="selection-text" id="selection-preview"></div>
-        <button id="use-selection" title="선택한 텍스트만 사용">📋 Use Selection</button>
+        <div class="selection-buttons">
+          <button id="use-selection" title="선택한 텍스트만 사용">📋 Use Selection</button>
+          <button id="reset-selection" title="선택 초기화">🔄 Reset</button>
+        </div>
       </div>
       <div class="input-container">
         <input type="text" id="user-input" placeholder="Type your message here...">
-        <button id="include-page-info" title="Include current page info">📄</button>
         <button id="send-button">Send</button>
       </div>
-    </div>
-    <div class="settings">
-      <div class="settings-row">
-        <select id="api-type-select">
-          <option value="vllm">vLLM</option>
-          <option value="ollama">Ollama</option>
-        </select>
-        <select id="model-select">
-          <!-- Options will be populated by JavaScript -->
-        </select>
-      </div>
-      <button id="save-settings">Save Settings</button>
     </div>
   </div>
   <script src="marked.min.js"></script>

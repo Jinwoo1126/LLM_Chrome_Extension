@@ -14,14 +14,6 @@ chrome.runtime.onInstalled.addListener(() => {
     contexts: ['all']
   });
 
-  // Create a menu item for asking about the current page
-  chrome.contextMenus.create({
-    id: 'ask-about-page',
-    parentId: 'llm-extension',
-    title: 'Ask LLM about this page',
-    contexts: ['page']
-  });
-
   // Create a menu item for asking about selected text
   chrome.contextMenus.create({
     id: 'ask-about-selection',
@@ -33,23 +25,7 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'ask-about-page') {
-    // 탭 ID를 저장하고 확장 프로그램 팝업을 직접 열기
-    chrome.storage.local.set({ 
-      'contextAction': 'page',
-      'activeTabId': tab.id 
-    }, () => {
-      // 새 창에서 팝업 HTML을 열기
-      chrome.windows.create({
-        url: chrome.runtime.getURL('popup.html'),
-        type: 'popup',
-        width: 400,
-        height: 600,
-        focused: true
-      });
-    });
-  } 
-  else if (info.menuItemId === 'ask-about-selection') {
+  if (info.menuItemId === 'ask-about-selection') {
     // 선택된 텍스트와 탭 ID를 저장하고 확장 프로그램 팝업을 직접 열기
     currentSelection = info.selectionText || '';
     chrome.storage.local.set({ 
@@ -181,6 +157,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     });
     
+    return true;
+  }
+
+  // Handle clear selection request
+  if (message.action === 'clearSelection') {
+    currentSelection = '';
+    // Notify content script to clear selection
+    chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+      if (tabs.length > 0) {
+        chrome.tabs.sendMessage(tabs[0].id, { action: 'clearSelection' });
+      }
+    });
+    sendResponse({ success: true });
     return true;
   }
 

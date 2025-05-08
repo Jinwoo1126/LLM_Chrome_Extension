@@ -16,19 +16,33 @@ document.addEventListener('DOMContentLoaded', function() {
   const chatMessages = document.getElementById('chat-messages');
   const userInput = document.getElementById('user-input');
   const sendButton = document.getElementById('send-button');
-  const includePageInfoButton = document.getElementById('include-page-info');
-  const apiUrlInput = document.getElementById('api-url');
-  const saveSettingsButton = document.getElementById('save-settings');
   
   // New elements for selection display
   const selectionInfo = document.getElementById('selection-info');
   const selectionPreview = document.getElementById('selection-preview');
   const useSelectionButton = document.getElementById('use-selection');
+  const resetSelectionButton = document.getElementById('reset-selection');
   
   // Current selection state
   let currentSelection = '';
   // New flag to track if selection is stored for use
   let isSelectionStored = false;
+
+  // Reset selection function
+  function resetSelection() {
+    currentSelection = '';
+    isSelectionStored = false;
+    selectionPreview.textContent = '';
+    selectionInfo.classList.add('hidden');
+    useSelectionButton.textContent = '📋 Use Selection';
+    useSelectionButton.classList.remove('selection-stored');
+    
+    // Notify background script to clear selection
+    chrome.runtime.sendMessage({ action: 'clearSelection' });
+  }
+
+  // Handle reset button click
+  resetSelectionButton.addEventListener('click', resetSelection);
 
   // Configure marked
   marked.setOptions({
@@ -39,77 +53,6 @@ document.addEventListener('DOMContentLoaded', function() {
       return hljs.highlightAuto(code).value;
     },
     breaks: true
-  });
-
-  // Default API configuration
-  const defaultApiConfig = {
-    apiBase: '...',
-    model: '...',
-    apiKey: 'EMPTY'
-  };
-
-  // Model configurations
-  const modelConfigs = {
-    vllm: [
-      { id: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ', name: 'Qwen 2.5 Coder 7B' },
-      { id: '...', name: '...' },
-      // Add more vLLM models here
-    ],
-    ollama: [
-      { id: 'gemma3', name: 'Gemma 3' },
-      { id: 'llama4', name: 'Llama 4' }
-    ]
-  };
-
-  // Load saved settings or use default
-  chrome.storage.local.get(['model', 'apiKey', 'apiType'], function(result) {
-    console.log('Loaded settings:', result);
-    const modelSelect = document.getElementById('model-select');
-    const apiTypeSelect = document.getElementById('api-type-select');
-    
-    // Set API type
-    if (result.apiType) {
-      apiTypeSelect.value = result.apiType;
-      updateModelOptions(result.apiType);
-    }
-    
-    // Set model
-    if (result.model) {
-      modelSelect.value = result.model;
-    }
-  });
-
-  // Update model options based on API type
-  function updateModelOptions(apiType) {
-    const modelSelect = document.getElementById('model-select');
-    modelSelect.innerHTML = '';
-    
-    const models = modelConfigs[apiType] || [];
-    models.forEach(model => {
-      const option = document.createElement('option');
-      option.value = model.id;
-      option.textContent = model.name;
-      modelSelect.appendChild(option);
-    });
-  }
-
-  // Save settings
-  saveSettingsButton.addEventListener('click', function() {
-    const model = document.getElementById('model-select').value;
-    const apiType = document.getElementById('api-type-select').value;
-    console.log('Saving settings:', { model, apiType });
-    chrome.storage.local.set({ 
-      model: model,
-      apiType: apiType,
-      apiKey: defaultApiConfig.apiKey
-    }, function() {
-      alert('Settings saved!');
-    });
-  });
-
-  // Handle API type change
-  document.getElementById('api-type-select').addEventListener('change', function(e) {
-    updateModelOptions(e.target.value);
   });
 
   // Check for selected text when popup opens
@@ -137,9 +80,6 @@ document.addEventListener('DOMContentLoaded', function() {
       // Update and show the selection UI
       selectionPreview.textContent = previewText;
       selectionInfo.classList.remove('hidden');
-      
-      // 버튼 상태를 변경하지 않고 유지
-      // 이전에는 항상 'Use Selection'으로 초기화했었음
     } else {
       // Hide the selection UI if no selection
       selectionInfo.classList.add('hidden');
@@ -169,115 +109,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // Fetch current page information
-  async function getCurrentPageInfo() {
-    return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ action: 'getCurrentPageInfo' }, (response) => {
-        console.log('Page info received:', response);
-        
-        // If we received selection info, update UI
-        if (response && response.selectedText) {
-          currentSelection = response.selectedText;
-          updateSelectionUI(currentSelection);
-        }
-        
-        if (response.error) {
-          console.error('Error getting page info:', response.error);
-          // If we have fallback info, use that
-          if (response.fallbackInfo) {
-            resolve(response.fallbackInfo);
-          } else {
-            resolve({ title: 'Unknown page', url: 'Unknown URL' });
-          }
-        } else {
-          resolve(response);
-        }
-      });
-    });
-  }
-
-  // Handle include page info button click
-  includePageInfoButton.addEventListener('click', async function() {
-    console.log('Include page info button clicked');
-    
-    // Show loading state
-    includePageInfoButton.disabled = true;
-    includePageInfoButton.textContent = '⌛';
-    
-    try {
-      const pageInfo = await getCurrentPageInfo();
-      
-      let pageInfoText = `Current page: "${pageInfo.title}"\nURL: ${pageInfo.url}\n`;
-      
-      // Include description if available
-      if (pageInfo.description && pageInfo.description.trim()) {
-        pageInfoText += `\nDescription: ${pageInfo.description}\n`;
-      }
-      
-      // Include selected text if available - 한글 텍스트를 영어로 변경
-      if (pageInfo.selectedText && pageInfo.selectedText.trim()) {
-        pageInfoText += `\nSelected text: "${pageInfo.selectedText}"\n`;
-      }
-      // Include a brief excerpt of main content if available
-      else if (pageInfo.mainContent && pageInfo.mainContent.trim()) {
-        // Limit to a short preview
-        const contentPreview = pageInfo.mainContent.substring(0, 300) + 
-                              (pageInfo.mainContent.length > 300 ? '...' : '');
-        pageInfoText += `\nPage content excerpt: "${contentPreview}"\n`;
-      }
-      
-      // Add to current input or create new input
-      if (userInput.value.trim()) {
-        userInput.value += '\n\n' + pageInfoText;
-      } else {
-        userInput.value = pageInfoText;
-      }
-      
-      // Focus the input field
-      userInput.focus();
-    } catch (error) {
-      console.error('Error including page info:', error);
-      alert('Failed to get page information. Please try again.');
-    } finally {
-      // Reset button state
-      includePageInfoButton.disabled = false;
-      includePageInfoButton.textContent = '📄';
-    }
-  });
-
   // Send message to LLM with streaming
   async function sendMessage(message) {
     console.log('Sending message:', message);
-    const model = document.getElementById('model-select').value;
-    const apiType = document.getElementById('api-type-select').value;
-    
-    let apiUrl;
-    if (apiType === 'ollama') {
-      apiUrl = 'http://localhost:11434/api/chat';
-    } else {
-      apiUrl = `${defaultApiConfig.apiBase}/chat/completions`;
-    }
-    
-    console.log('API URL:', apiUrl);
     
     try {
-      const response = await fetch(apiUrl, {
+      const response = await fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': apiType === 'ollama' ? '' : `Bearer ${defaultApiConfig.apiKey}`
+          'Content-Type': 'application/json'
         },
-        body: JSON.stringify(apiType === 'ollama' ? {
-          model: model,
-          messages: [
-            {
-              role: 'user',
-              content: message
-            }
-          ],
-          stream: true
-        } : {
-          model: model,
+        body: JSON.stringify({
+          model: 'gemma3',
           messages: [
             {
               role: 'user',
@@ -311,38 +154,15 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Received chunk:', chunk);
         
         try {
-          if (apiType === 'ollama') {
-            // Handle Ollama's raw JSON response
-            const parsed = JSON.parse(chunk);
-            const content = parsed.message?.content || '';
-            if (content) {
-              assistantMessage += content;
-              messageDiv.innerHTML = marked.parse(assistantMessage);
-              messageDiv.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-              });
-              chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
-          } else {
-            // Handle vLLM's SSE format
-            const lines = chunk.split('\n').filter(line => line.trim() !== '');
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6);
-                if (data === '[DONE]') continue;
-
-                const parsed = JSON.parse(data);
-                const content = parsed.choices[0].delta.content;
-                if (content) {
-                  assistantMessage += content;
-                  messageDiv.innerHTML = marked.parse(assistantMessage);
-                  messageDiv.querySelectorAll('pre code').forEach((block) => {
-                    hljs.highlightElement(block);
-                  });
-                  chatMessages.scrollTop = chatMessages.scrollHeight;
-                }
-              }
-            }
+          const parsed = JSON.parse(chunk);
+          const content = parsed.message?.content || '';
+          if (content) {
+            assistantMessage += content;
+            messageDiv.innerHTML = marked.parse(assistantMessage);
+            messageDiv.querySelectorAll('pre code').forEach((block) => {
+              hljs.highlightElement(block);
+            });
+            chatMessages.scrollTop = chatMessages.scrollHeight;
           }
         } catch (e) {
           console.error('Error parsing streaming response:', e);
@@ -427,47 +247,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   });
 
-  // New function to handle actions from context menu
-  async function handleContextAction() {
-    chrome.runtime.sendMessage({ action: 'checkContextAction' }, async (response) => {
-      if (response && response.action) {
-        console.log('Context action detected:', response.action);
-        
-        if (response.action === 'page') {
-          // Automatically include page info
-          includePageInfoButton.click();
-        } 
-        else if (response.action === 'selection' && response.selection) {
-          // Set the selection and mark it as stored
-          currentSelection = response.selection;
-          updateSelectionUI(currentSelection);
-          
-          // Auto-store the selection
-          isSelectionStored = true;
-          useSelectionButton.textContent = '✅ Selection Ready';
-          useSelectionButton.classList.add('selection-stored');
-          
-          // Focus the input field for the user to type a question
-          userInput.focus();
-          
-          // Optional: Pre-fill with a prompt about the selection
-          if (!userInput.value) {
-            userInput.value = "Tell me about this selection:";
-            userInput.setSelectionRange(userInput.value.length, userInput.value.length);
-          }
-        }
-      }
-    });
-  }
-
   // Check for selection when popup opens
   checkForSelection();
-  
-  // Also fetch page info when popup opens to update selection UI
-  getCurrentPageInfo();
-  
-  // Check for context menu actions when popup opens
-  handleContextAction();
   
   // Check for selection changes more frequently
   // This adds real-time monitoring for selections while popup is open
@@ -488,7 +269,4 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Initialize selection monitoring
   setupSelectionMonitoring();
-  
-  // Also fetch page info when popup opens
-  getCurrentPageInfo();
 });
