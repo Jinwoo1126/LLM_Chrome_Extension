@@ -3,12 +3,28 @@
   "name": "LLM Chat Extension",
   "version": "1.0",
   "description": "Chat with LLM through vLLM API",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
   "permissions": [
     "storage",
     "activeTab",
     "tabs",
     "contextMenus",
     "windows",
+    "sidePanel",
     "http://localhost/*",
     "http://127.0.0.1:11434"
   ],
@@ -32,10 +48,10 @@
     "http://localhost/*",
     "http://127.0.0.1:11434"
   ],
-  "action": {
-    "default_popup": "popup.html"
-  },
   "background": {
     "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   }
 }
