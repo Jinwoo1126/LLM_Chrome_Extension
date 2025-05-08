@@ -21,7 +21,15 @@
       </div>
     </div>
     <div class="settings">
-      <input type="text" id="api-url" placeholder="Enter model name (e.g., Qwen/Qwen2.5-Coder-7B-Instruct-AWQ)">
+      <div class="settings-row">
+        <select id="api-type-select">
+          <option value="vllm">vLLM</option>
+          <option value="ollama">Ollama</option>
+        </select>
+        <select id="model-select">
+          <!-- Options will be populated by JavaScript -->
+        </select>
+      </div>
       <button id="save-settings">Save Settings</button>
     </div>
   </div>
