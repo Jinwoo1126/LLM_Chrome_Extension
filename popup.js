@@ -29,12 +29,32 @@ document.addEventListener('DOMContentLoaded', function() {
   // New flag to track if selection is stored for use
   let isSelectionStored = false;
 
-  // Load saved model preference
-  chrome.storage.local.get(['selectedModel'], function(result) {
-    if (result.selectedModel) {
-      modelSelect.value = result.selectedModel;
-    }
-  });
+  // Initialize model selector
+  function initializeModelSelector() {
+    // Add vLLM option
+    const vllmOption = document.createElement('option');
+    vllmOption.value = 'vllm';
+    vllmOption.textContent = 'vLLM';
+    modelSelect.appendChild(vllmOption);
+
+    // Add Ollama options
+    Object.entries(MODEL_CONFIG.ollama.models).forEach(([key, model]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = model.name;
+      modelSelect.appendChild(option);
+    });
+
+    // Load saved model preference
+    chrome.storage.local.get(['selectedModel'], function(result) {
+      if (result.selectedModel) {
+        modelSelect.value = result.selectedModel;
+      }
+    });
+  }
+
+  // Initialize model selector
+  initializeModelSelector();
 
   // Save model preference when changed
   modelSelect.addEventListener('change', function() {
@@ -128,22 +148,22 @@ document.addEventListener('DOMContentLoaded', function() {
     
     try {
       const selectedModel = modelSelect.value;
-      const endpoint = selectedModel === 'vllm' 
-        ? 'https://f6c7-34-46-159-97.ngrok-free.app/v1/chat/completions'
-        : 'http://localhost:11434/api/chat';
+      const isVllm = selectedModel === 'vllm';
+      
+      const endpoint = isVllm 
+        ? MODEL_CONFIG.vllm.endpoint
+        : MODEL_CONFIG.ollama.endpoint;
 
-      const requestBody = selectedModel === 'vllm'
+      const requestBody = isVllm
         ? {
-            model: "Qwen/Qwen2.5-Coder-7B-Instruct-AWQ",
+            model: MODEL_CONFIG.vllm.model,
             messages: [
               {
                 role: "user",
                 content: message
               }
             ],
-            stream: true,
-            temperature: 0.7,
-            max_tokens: 1000
+            ...MODEL_CONFIG.vllm.params
           }
         : {
             model: selectedModel,
@@ -153,7 +173,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 content: message
               }
             ],
-            stream: true
+            ...MODEL_CONFIG.ollama.models[selectedModel].params
           };
 
       const response = await fetch(endpoint, {
@@ -188,7 +208,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
           // Handle OpenAI-compatible streaming format
-          if (selectedModel === 'vllm') {
+          if (isVllm) {
             // Split by double newlines as each chunk is a separate JSON object
             const lines = chunk.split('\n\n');
             for (const line of lines) {

@@ -33,3 +33,32 @@ const apiConfig = {
 
 // Export the configuration object
 window.apiConfig = apiConfig;
+
+const MODEL_CONFIG = {
+  vllm: {
+    endpoint: 'https://f6c7-34-46-159-97.ngrok-free.app/v1/chat/completions',
+    model: 'Qwen/Qwen2.5-Coder-7B-Instruct-AWQ',
+    params: {
+      temperature: 0.7,
+      max_tokens: 1000,
+      stream: true
+    }
+  },
+  ollama: {
+    endpoint: 'http://localhost:11434/api/chat',
+    models: {
+      gemma3: {
+        name: 'Gemma 3',
+        params: {
+          stream: true
+        }
+      },
+      llama4: {
+        name: 'Llama 4',
+        params: {
+          stream: true
+        }
+      }
+    }
+  }
+};

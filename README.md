@@ -1,54 +1,102 @@
 # LLM Chrome Extension
 
-Chrome extension that allows you to chat with various LLM models directly from your browser.
+Chrome extension for interacting with various LLM models through a convenient chat interface.
 
 ## Features
 
-- Chat with vLLM and Ollama models
-- Select text from web pages and ask questions about it
-- Include page information in your queries
-- Markdown support with syntax highlighting
-- Real-time streaming responses
+- Chat interface with markdown support
+- Code syntax highlighting
+- Text selection support
+- Multiple model support (vLLM and Ollama)
+- Side panel support
 
-## Setup
+## Model Configuration
 
-### vLLM Setup
+The extension supports multiple LLM backends through the `config.js` file. You can easily add or modify models by editing this file.
 
-1. Set up your vLLM server with the desired models
-2. Update the `defaultApiConfig` in `popup.js` with your vLLM server URL
+### Adding a New Model
 
-### Ollama Setup
+#### 1. Adding a new Ollama model
 
-1. Install Ollama from [ollama.ai](https://ollama.ai)
+To add a new Ollama model, add it to the `MODEL_CONFIG.ollama.models` object in `config.js`:
 
-2. Pull the required models:
-```bash
-ollama pull llama4
-ollama pull gemma3
+```javascript
+const MODEL_CONFIG = {
+  ollama: {
+    endpoint: 'http://localhost:11434/api/chat',
+    models: {
+      // Existing models...
+      newModel: {
+        name: 'Your Model Name',  // Display name in the dropdown
+        params: {
+          stream: true,
+          // Add any other Ollama-specific parameters
+        }
+      }
+    }
+  }
+};
 ```
 
-3. Start Ollama server with CORS enabled for Chrome extension:
-```bash
-OLLAMA_ORIGINS="chrome-extension://*" ollama serve
+#### 2. Adding a new vLLM model
+
+To add a new vLLM model, modify the `MODEL_CONFIG.vllm` object in `config.js`:
+
+```javascript
+const MODEL_CONFIG = {
+  vllm: {
+    endpoint: 'your-vllm-endpoint',
+    model: 'your-model-name',
+    params: {
+      temperature: 0.7,
+      max_tokens: 1000,
+      stream: true,
+      // Add any other OpenAI-compatible parameters
+    }
+  }
+};
 ```
 
-4. The extension will automatically connect to Ollama at `http://localhost:11434`
+### Model Parameters
+
+#### Ollama Parameters
+- `stream`: Enable/disable streaming responses
+- Add any other Ollama-specific parameters as needed
+
+#### vLLM Parameters
+- `temperature`: Controls randomness (0.0 to 1.0)
+- `max_tokens`: Maximum number of tokens to generate
+- `stream`: Enable/disable streaming responses
+- Add any other OpenAI-compatible parameters as needed
 
 ## Usage
 
-1. Click the extension icon to open the chat interface
-2. Select your preferred API (vLLM or Ollama) and model from the dropdown
-3. Type your message or select text from the webpage
-4. Click "Send" to get a response
+1. Select your preferred model from the dropdown menu
+2. Type your message in the input field
+3. Press Enter or click Send to get a response
+4. Use the text selection feature to include selected text in your message
 
 ## Development
 
-1. Clone this repository
+### Prerequisites
+- Chrome browser
+- Ollama server (for Ollama models)
+- vLLM server (for vLLM models)
+
+### Setup
+1. Clone the repository
 2. Load the extension in Chrome:
-   - Open Chrome and go to `chrome://extensions/`
+   - Go to `chrome://extensions/`
    - Enable "Developer mode"
-   - Click "Load unpacked" and select the extension directory
-3. Make changes and reload the extension to see updates
+   - Click "Load unpacked"
+   - Select the extension directory
+
+### Configuration
+Edit `config.js` to:
+- Add new models
+- Modify existing model parameters
+- Change API endpoints
+- Adjust streaming settings
 
 ## License
 

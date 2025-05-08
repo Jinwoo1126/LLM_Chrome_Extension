@@ -11,9 +11,7 @@
     <div class="chat-container">
       <div class="model-selector">
         <select id="model-select">
-          <option value="gemma3">Gemma 3</option>
-          <option value="llama4">Llama 4</option>
-          <option value="vllm">vLLM</option>
+          <!-- Options will be populated dynamically -->
         </select>
       </div>
       <div id="chat-messages" class="chat-messages"></div>
@@ -30,6 +28,7 @@
       </div>
     </div>
   </div>
+  <script src="config.js"></script>
   <script src="marked.min.js"></script>
   <script src="highlight.min.js"></script>
   <script>
