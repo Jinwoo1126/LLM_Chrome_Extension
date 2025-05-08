@@ -194,3 +194,34 @@ button:hover {
     transform: scale(1);
   }
 }
+
+/* Model selector styles */
+.model-selector {
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  display: flex;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.model-selector select {
+  padding: 6px 12px;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 14px;
+  color: #495057;
+  cursor: pointer;
+  transition: border-color 0.15s ease-in-out;
+}
+
+.model-selector select:hover {
+  border-color: #80bdff;
+}
+
+.model-selector select:focus {
+  outline: 0;
+  border-color: #80bdff;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}

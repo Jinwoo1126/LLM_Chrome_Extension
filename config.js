@@ -33,3 +33,32 @@ const apiConfig = {
 
 // Export the configuration object
 window.apiConfig = apiConfig;
+
+const MODEL_CONFIG = {
+  vllm: {
+    endpoint: '...',
+    model: '...',
+    params: {
+      temperature: 0.7,
+      max_tokens: 1000,
+      stream: true
+    }
+  },
+  ollama: {
+    endpoint: 'http://localhost:11434/api/chat',
+    models: {
+      gemma3: {
+        name: 'Gemma 3',
+        params: {
+          stream: true
+        }
+      },
+      llama4: {
+        name: 'Llama 4',
+        params: {
+          stream: true
+        }
+      }
+    }
+  }
+};

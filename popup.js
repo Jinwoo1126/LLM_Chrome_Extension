@@ -16,6 +16,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const chatMessages = document.getElementById('chat-messages');
   const userInput = document.getElementById('user-input');
   const sendButton = document.getElementById('send-button');
+  const modelSelect = document.getElementById('model-select');
   
   // New elements for selection display
   const selectionInfo = document.getElementById('selection-info');
@@ -27,6 +28,38 @@ document.addEventListener('DOMContentLoaded', function() {
   let currentSelection = '';
   // New flag to track if selection is stored for use
   let isSelectionStored = false;
+
+  // Initialize model selector
+  function initializeModelSelector() {
+    // Add vLLM option
+    const vllmOption = document.createElement('option');
+    vllmOption.value = 'vllm';
+    vllmOption.textContent = 'vLLM';
+    modelSelect.appendChild(vllmOption);
+
+    // Add Ollama options
+    Object.entries(MODEL_CONFIG.ollama.models).forEach(([key, model]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = model.name;
+      modelSelect.appendChild(option);
+    });
+
+    // Load saved model preference
+    chrome.storage.local.get(['selectedModel'], function(result) {
+      if (result.selectedModel) {
+        modelSelect.value = result.selectedModel;
+      }
+    });
+  }
+
+  // Initialize model selector
+  initializeModelSelector();
+
+  // Save model preference when changed
+  modelSelect.addEventListener('change', function() {
+    chrome.storage.local.set({ selectedModel: modelSelect.value });
+  });
 
   // Reset selection function
   function resetSelection() {
@@ -114,21 +147,41 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Sending message:', message);
     
     try {
-      const response = await fetch('http://localhost:11434/api/chat', {
+      const selectedModel = modelSelect.value;
+      const isVllm = selectedModel === 'vllm';
+      
+      const endpoint = isVllm 
+        ? MODEL_CONFIG.vllm.endpoint
+        : MODEL_CONFIG.ollama.endpoint;
+
+      const requestBody = isVllm
+        ? {
+            model: MODEL_CONFIG.vllm.model,
+            messages: [
+              {
+                role: "user",
+                content: message
+              }
+            ],
+            ...MODEL_CONFIG.vllm.params
+          }
+        : {
+            model: selectedModel,
+            messages: [
+              {
+                role: "user",
+                content: message
+              }
+            ],
+            ...MODEL_CONFIG.ollama.models[selectedModel].params
+          };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          model: 'gemma3',
-          messages: [
-            {
-              role: 'user',
-              content: message
-            }
-          ],
-          stream: true
-        })
+        body: JSON.stringify(requestBody)
       });
 
       console.log('Response status:', response.status);
@@ -154,15 +207,43 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Received chunk:', chunk);
         
         try {
-          const parsed = JSON.parse(chunk);
-          const content = parsed.message?.content || '';
-          if (content) {
-            assistantMessage += content;
-            messageDiv.innerHTML = marked.parse(assistantMessage);
-            messageDiv.querySelectorAll('pre code').forEach((block) => {
-              hljs.highlightElement(block);
-            });
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+          // Handle OpenAI-compatible streaming format
+          if (isVllm) {
+            // Split by double newlines as each chunk is a separate JSON object
+            const lines = chunk.split('\n\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const jsonStr = line.slice(6); // Remove 'data: ' prefix
+                if (jsonStr === '[DONE]') continue;
+                
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  const content = parsed.choices?.[0]?.delta?.content || '';
+                  if (content) {
+                    assistantMessage += content;
+                    messageDiv.innerHTML = marked.parse(assistantMessage);
+                    messageDiv.querySelectorAll('pre code').forEach((block) => {
+                      hljs.highlightElement(block);
+                    });
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                  }
+                } catch (e) {
+                  console.error('Error parsing vLLM chunk:', e);
+                }
+              }
+            }
+          } else {
+            // Handle Ollama format
+            const parsed = JSON.parse(chunk);
+            const content = parsed.message?.content || '';
+            if (content) {
+              assistantMessage += content;
+              messageDiv.innerHTML = marked.parse(assistantMessage);
+              messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
           }
         } catch (e) {
           console.error('Error parsing streaming response:', e);
@@ -177,28 +258,26 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Add message to chat
-  function addMessage(content, isUser) {
-    console.log('Adding message:', { content, isUser });
+  function addMessage(message, isUser = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
-    if (isUser) {
-      messageDiv.textContent = content;
-    } else {
-      messageDiv.innerHTML = marked.parse(content);
-      // Apply syntax highlighting to code blocks
-      messageDiv.querySelectorAll('pre code').forEach((block) => {
-        hljs.highlightElement(block);
-      });
-    }
+    messageDiv.innerHTML = marked.parse(message);
     chatMessages.appendChild(messageDiv);
+    
+    // Apply syntax highlighting to code blocks
+    messageDiv.querySelectorAll('pre code').forEach((block) => {
+      hljs.highlightElement(block);
+    });
+    
+    // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
   // Handle send button click
   sendButton.addEventListener('click', async function() {
-    console.log('Send button clicked');
-    let message = userInput.value.trim();
+    const message = userInput.value.trim();
     let displayMessage = message; // 화면에 표시할 메시지
+    let messageToSend = message; // LLM에 보낼 메시지
     
     // If selection is stored, add it to the message internally
     if (isSelectionStored && currentSelection) {
@@ -219,10 +298,10 @@ document.addEventListener('DOMContentLoaded', function() {
       // Add selection to messages
       if (message) {
         displayMessage = message + '\n\n' + formattedDisplaySelection; // UI 표시용
-        message = message + '\n\n' + formattedFullSelection; // LLM 전송용
+        messageToSend = message + '\n\n' + formattedFullSelection; // LLM 전송용
       } else {
         displayMessage = formattedDisplaySelection; // UI 표시용
-        message = formattedFullSelection; // LLM 전송용
+        messageToSend = formattedFullSelection; // LLM 전송용
       }
       
       // Reset selection stored state after using it
@@ -231,11 +310,11 @@ document.addEventListener('DOMContentLoaded', function() {
       useSelectionButton.classList.remove('selection-stored');
     }
     
-    if (message) {
+    if (messageToSend) {
       // UI에는 간략한 버전 표시, 실제 전송은 전체 내용
       addMessage(displayMessage, true);
       userInput.value = '';
-      await sendMessage(message); // 전체 내용 전송
+      await sendMessage(messageToSend); // 전체 내용 전송
     }
   });
 

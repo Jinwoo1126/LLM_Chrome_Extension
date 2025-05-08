@@ -9,6 +9,11 @@
 <body>
   <div class="container">
     <div class="chat-container">
+      <div class="model-selector">
+        <select id="model-select">
+          <!-- Options will be populated dynamically -->
+        </select>
+      </div>
       <div id="chat-messages" class="chat-messages"></div>
       <div id="selection-info" class="selection-info hidden">
         <div class="selection-text" id="selection-preview"></div>
@@ -23,6 +28,7 @@
       </div>
     </div>
   </div>
+  <script src="config.js"></script>
   <script src="marked.min.js"></script>
   <script src="highlight.min.js"></script>
   <script>
