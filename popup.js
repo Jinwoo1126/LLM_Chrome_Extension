@@ -127,21 +127,41 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Sending message:', message);
     
     try {
-      const response = await fetch('http://localhost:11434/api/chat', {
+      const selectedModel = modelSelect.value;
+      const endpoint = selectedModel === 'vllm' 
+        ? 'https://f6c7-34-46-159-97.ngrok-free.app/v1/chat/completions'
+        : 'http://localhost:11434/api/chat';
+
+      const requestBody = selectedModel === 'vllm'
+        ? {
+            model: "Qwen/Qwen2.5-Coder-7B-Instruct-AWQ",
+            messages: [
+              {
+                role: "user",
+                content: message
+              }
+            ],
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 1000
+          }
+        : {
+            model: selectedModel,
+            messages: [
+              {
+                role: "user",
+                content: message
+              }
+            ],
+            stream: true
+          };
+
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          model: modelSelect.value,
-          messages: [
-            {
-              role: 'user',
-              content: message
-            }
-          ],
-          stream: true
-        })
+        body: JSON.stringify(requestBody)
       });
 
       console.log('Response status:', response.status);
@@ -167,15 +187,43 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Received chunk:', chunk);
         
         try {
-          const parsed = JSON.parse(chunk);
-          const content = parsed.message?.content || '';
-          if (content) {
-            assistantMessage += content;
-            messageDiv.innerHTML = marked.parse(assistantMessage);
-            messageDiv.querySelectorAll('pre code').forEach((block) => {
-              hljs.highlightElement(block);
-            });
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+          // Handle OpenAI-compatible streaming format
+          if (selectedModel === 'vllm') {
+            // Split by double newlines as each chunk is a separate JSON object
+            const lines = chunk.split('\n\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const jsonStr = line.slice(6); // Remove 'data: ' prefix
+                if (jsonStr === '[DONE]') continue;
+                
+                try {
+                  const parsed = JSON.parse(jsonStr);
+                  const content = parsed.choices?.[0]?.delta?.content || '';
+                  if (content) {
+                    assistantMessage += content;
+                    messageDiv.innerHTML = marked.parse(assistantMessage);
+                    messageDiv.querySelectorAll('pre code').forEach((block) => {
+                      hljs.highlightElement(block);
+                    });
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                  }
+                } catch (e) {
+                  console.error('Error parsing vLLM chunk:', e);
+                }
+              }
+            }
+          } else {
+            // Handle Ollama format
+            const parsed = JSON.parse(chunk);
+            const content = parsed.message?.content || '';
+            if (content) {
+              assistantMessage += content;
+              messageDiv.innerHTML = marked.parse(assistantMessage);
+              messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
           }
         } catch (e) {
           console.error('Error parsing streaming response:', e);
