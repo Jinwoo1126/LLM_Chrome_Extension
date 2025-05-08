@@ -75,6 +75,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     sendResponse({ selectedText: selection || currentSelection });
     return true;
   }
+
+  if (message.action === 'clearSelection') {
+    // Clear the current selection
+    window.getSelection().removeAllRanges();
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 // Notify that the content script is ready
