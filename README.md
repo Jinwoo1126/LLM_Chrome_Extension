@@ -1,6 +1,6 @@
 # LLM Chrome Extension
 
-Chrome extension for interacting with various LLM models through a convenient chat interface.
+Chrome extension for interacting with various LLM models through a convenient chat interface. Also supports Microsoft Edge.
 
 ## Features
 
@@ -9,6 +9,23 @@ Chrome extension for interacting with various LLM models through a convenient ch
 - Text selection support
 - Multiple model support (vLLM and Ollama)
 - Side panel support
+- Cross-browser support (Chrome and Edge)
+
+## Browser Support
+
+The extension is compatible with both Google Chrome and Microsoft Edge browsers. The same design and functionality are maintained across both browsers.
+
+### Chrome Installation
+1. Go to `chrome://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the extension directory
+
+### Edge Installation
+1. Go to `edge://extensions/`
+2. Enable "Developer mode"
+3. Click "Load unpacked"
+4. Select the extension directory
 
 ## Model Configuration
 
@@ -79,14 +96,15 @@ const MODEL_CONFIG = {
 ## Development
 
 ### Prerequisites
-- Chrome browser
+- Chrome or Edge browser
 - Ollama server (for Ollama models)
 - vLLM server (for vLLM models)
 
 ### Setup
 1. Clone the repository
-2. Load the extension in Chrome:
-   - Go to `chrome://extensions/`
+2. Load the extension in your preferred browser:
+   - Chrome: Go to `chrome://extensions/`
+   - Edge: Go to `edge://extensions/`
    - Enable "Developer mode"
    - Click "Load unpacked"
    - Select the extension directory
