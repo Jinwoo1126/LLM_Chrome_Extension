@@ -33,7 +33,10 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // Handle context menu clicks
 chrome.contextMenus.onClicked.addListener((info, tab) => {
-  if (info.menuItemId === 'ask-about-selection') {
+  if (info.menuItemId === 'llm-extension') {
+    // Open side panel when clicking the main menu item
+    chrome.sidePanel.open({ windowId: tab.windowId });
+  } else if (info.menuItemId === 'ask-about-selection') {
     // 선택된 텍스트와 탭 ID를 저장하고 확장 프로그램 팝업을 직접 열기
     currentSelection = info.selectionText || '';
     chrome.storage.local.set({ 

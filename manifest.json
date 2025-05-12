@@ -52,7 +52,7 @@
     "service_worker": "background.js"
   },
   "side_panel": {
-    "default_path": "popup.html?side_panel=true"
+    "default_path": "sidepanel.html"
   },
   "browser_specific_settings": {
     "edge": {
