@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>LLM Chat Side Panel</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="highlight.css">
+</head>
+<body class="side-panel-mode">
+  <div class="container">
+    <div class="chat-container">
+      <div class="model-selector">
+        <select id="model-select">
+          <!-- Options will be populated dynamically -->
+        </select>
+      </div>
+      <div id="chat-messages" class="chat-messages"></div>
+      <div id="selection-info" class="selection-info hidden">
+        <div class="selection-header">
+          <svg class="selection-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+          <span>Selected text</span>
+        </div>
+        <div class="selection-content">
+          <div class="selection-text" id="selection-preview"></div>
+          <div class="selection-buttons">
+            <button id="use-selection" title="선택한 텍스트만 사용">📋 Use Selection</button>
+            <button id="reset-selection" title="선택 초기화">🔄 Reset</button>
+          </div>
+        </div>
+      </div>
+      <div class="input-container">
+        <textarea id="user-input" placeholder="Type your message here..." rows="1"></textarea>
+        <button id="send-button">Send</button>
+      </div>
+    </div>
+  </div>
+  <script src="config.js"></script>
+  <script src="marked.min.js"></script>
+  <script src="highlight.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html> 
