@@ -52,6 +52,11 @@
     "service_worker": "background.js"
   },
   "side_panel": {
-    "default_path": "popup.html"
+    "default_path": "sidepanel.html"
+  },
+  "browser_specific_settings": {
+    "edge": {
+      "browser_action_next_to_address_bar": true
+    }
   }
 }

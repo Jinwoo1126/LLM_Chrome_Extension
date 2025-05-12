@@ -1,6 +1,10 @@
 document.addEventListener('DOMContentLoaded', function() {
   console.log('Extension loaded');
   
+  // Detect if we're in popup or side panel mode
+  const isSidePanel = window.location.search.includes('side_panel=true');
+  document.body.classList.add(isSidePanel ? 'side-panel-mode' : 'popup-mode');
+  
   // Verify that required libraries are loaded
   if (typeof marked === 'undefined') {
     console.error('marked library not loaded');
@@ -23,11 +27,19 @@ document.addEventListener('DOMContentLoaded', function() {
   const selectionPreview = document.getElementById('selection-preview');
   const useSelectionButton = document.getElementById('use-selection');
   const resetSelectionButton = document.getElementById('reset-selection');
+  const selectionHeader = document.querySelector('.selection-header');
+  const selectionContent = document.querySelector('.selection-content');
+  const selectionHeaderIcon = document.querySelector('.selection-header-icon');
   
   // Current selection state
   let currentSelection = '';
   // New flag to track if selection is stored for use
   let isSelectionStored = false;
+  // Track selection content visibility
+  let isSelectionContentVisible = true;
+
+  // Add flag to track if message is being sent
+  let isSendingMessage = false;
 
   // Initialize model selector
   function initializeModelSelector() {
@@ -140,6 +152,13 @@ document.addEventListener('DOMContentLoaded', function() {
         useSelectionButton.classList.remove('selection-stored');
       }
     }
+  });
+
+  // Toggle selection content visibility
+  selectionHeader.addEventListener('click', () => {
+    isSelectionContentVisible = !isSelectionContentVisible;
+    selectionContent.classList.toggle('collapsed', !isSelectionContentVisible);
+    selectionHeaderIcon.classList.toggle('collapsed', !isSelectionContentVisible);
   });
 
   // Send message to LLM with streaming
@@ -268,61 +287,106 @@ document.addEventListener('DOMContentLoaded', function() {
     messageDiv.querySelectorAll('pre code').forEach((block) => {
       hljs.highlightElement(block);
     });
+
+    // Add click handlers for message selection headers
+    messageDiv.querySelectorAll('.message-selection-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const content = header.nextElementSibling;
+        const icon = header.querySelector('.message-selection-icon');
+        content.classList.toggle('collapsed');
+        icon.classList.toggle('collapsed');
+      });
+    });
     
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
-  // Handle send button click
+  // Add auto-resize functionality to input
+  userInput.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = (this.scrollHeight) + 'px';
+  });
+
+  // Reset input height when message is sent
   sendButton.addEventListener('click', async function() {
-    const message = userInput.value.trim();
-    let displayMessage = message; // 화면에 표시할 메시지
-    let messageToSend = message; // LLM에 보낼 메시지
+    if (isSendingMessage) return; // Prevent multiple submissions
     
-    // If selection is stored, add it to the message internally
-    if (isSelectionStored && currentSelection) {
-      // UI에 표시되는 메시지용 간략한 형식
-      let formattedDisplaySelection;
-      const maxLength = 50; // 표시할 최대 길이
-      
-      if (currentSelection.length > maxLength) {
-        // 선택 텍스트가 길 경우 축약 표시 (UI용)
-        formattedDisplaySelection = `Selected text: "${currentSelection.substring(0, maxLength)}..." (${currentSelection.length} chars)`;
-      } else {
-        formattedDisplaySelection = `Selected text: "${currentSelection}"`;
-      }
-      
-      // LLM에 보내는 실제 메시지에는 전체 선택 텍스트를 포함
-      const formattedFullSelection = `Selected text: "${currentSelection}"`;
-      
-      // Add selection to messages
-      if (message) {
-        displayMessage = message + '\n\n' + formattedDisplaySelection; // UI 표시용
-        messageToSend = message + '\n\n' + formattedFullSelection; // LLM 전송용
-      } else {
-        displayMessage = formattedDisplaySelection; // UI 표시용
-        messageToSend = formattedFullSelection; // LLM 전송용
-      }
-      
-      // Reset selection stored state after using it
-      isSelectionStored = false;
-      useSelectionButton.textContent = '📋 Use Selection';
-      useSelectionButton.classList.remove('selection-stored');
-    }
+    const message = userInput.value.trim();
+    let displayMessage = message;
+    let messageToSend = message;
     
     if (messageToSend) {
-      // UI에는 간략한 버전 표시, 실제 전송은 전체 내용
+      isSendingMessage = true; // Set flag before sending
+      userInput.disabled = true; // Disable input while sending
+      
+      // If selection is stored, add it to the message internally
+      if (isSelectionStored && currentSelection) {
+        // UI에 표시되는 메시지용 간략한 형식
+        const maxLength = 100;
+        const truncatedText = currentSelection.length > maxLength 
+          ? currentSelection.substring(0, maxLength) + '...'
+          : currentSelection;
+
+        const formattedDisplaySelection = `
+<div class="message-selection">
+  <div class="message-selection-header">
+    <svg class="message-selection-icon collapsed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="6 9 12 15 18 9"></polyline>
+    </svg>
+    <span>Selected text (${currentSelection.length} chars)</span>
+  </div>
+  <div class="message-selection-content collapsed">
+    <pre>${truncatedText}</pre>
+  </div>
+</div>`;
+        
+        // LLM에 보내는 실제 메시지에는 전체 선택 텍스트를 포함
+        const formattedFullSelection = `Selected text: "${currentSelection}"`;
+        
+        // Add selection to messages
+        if (message) {
+          displayMessage = message + formattedDisplaySelection; // UI 표시용
+          messageToSend = message + '\n\n' + formattedFullSelection; // LLM 전송용
+        } else {
+          displayMessage = formattedDisplaySelection; // UI 표시용
+          messageToSend = formattedFullSelection; // LLM 전송용
+        }
+        
+        // Reset selection stored state after using it
+        isSelectionStored = false;
+        useSelectionButton.textContent = '📋 Use Selection';
+        useSelectionButton.classList.remove('selection-stored');
+      }
+      
       addMessage(displayMessage, true);
       userInput.value = '';
-      await sendMessage(messageToSend); // 전체 내용 전송
+      userInput.style.height = 'auto'; // Reset height
+      
+      try {
+        await sendMessage(messageToSend);
+      } finally {
+        isSendingMessage = false; // Reset flag after sending
+        userInput.disabled = false; // Re-enable input
+        userInput.focus(); // Focus back on input
+      }
     }
   });
 
   // Handle Enter key
-  userInput.addEventListener('keypress', function(e) {
+  userInput.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
-      console.log('Enter key pressed');
-      sendButton.click();
+      if (e.shiftKey) {
+        // Shift + Enter: Allow new line
+        return;
+      } else {
+        // Enter only: Send message
+        e.preventDefault(); // Prevent default new line
+        if (!isSendingMessage) { // Only send if not already sending
+          console.log('Enter key pressed');
+          sendButton.click();
+        }
+      }
     }
   });
 

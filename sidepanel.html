@@ -2,11 +2,11 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>LLM Chat</title>
+  <title>LLM Chat Side Panel</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="highlight.css">
 </head>
-<body>
+<body class="side-panel-mode">
   <div class="container">
     <div class="chat-container">
       <div class="model-selector">
@@ -39,15 +39,6 @@
   <script src="config.js"></script>
   <script src="marked.min.js"></script>
   <script src="highlight.min.js"></script>
-  <script>
-    // Verify that required libraries are loaded
-    if (typeof marked === 'undefined') {
-      console.error('marked library not loaded');
-    }
-    if (typeof hljs === 'undefined') {
-      console.error('highlight.js library not loaded');
-    }
-  </script>
   <script src="popup.js"></script>
 </body>
-</html>
+</html> 
