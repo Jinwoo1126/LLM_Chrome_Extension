@@ -1,6 +1,33 @@
 // Content script to collect page information
 console.log('Content script loaded');
 
+// Function to get selection from all frames
+function getAllSelections() {
+  let selections = [];
+  
+  // Get selection from main document
+  const mainSelection = window.getSelection().toString().trim();
+  if (mainSelection) {
+    selections.push(mainSelection);
+  }
+  
+  // Get selections from all iframes
+  const iframes = document.getElementsByTagName('iframe');
+  for (let iframe of iframes) {
+    try {
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+      const iframeSelection = iframeDoc.getSelection().toString().trim();
+      if (iframeSelection) {
+        selections.push(iframeSelection);
+      }
+    } catch (e) {
+      console.log('Cannot access iframe content:', e);
+    }
+  }
+  
+  return selections.join('\n\n');
+}
+
 // Function to extract page content
 function extractPageContent() {
   // Get page title
@@ -16,8 +43,8 @@ function extractPageContent() {
   // Get URL
   const url = window.location.href;
   
-  // Get selected text if any
-  const selectedText = window.getSelection().toString();
+  // Get selected text from all frames
+  const selectedText = getAllSelections();
   
   // Extract main content (basic implementation)
   // Gets text from article, main, or body elements
@@ -39,7 +66,7 @@ function extractPageContent() {
     description,
     selectedText,
     mainContent,
-    hasSelection: selectedText.length > 0 // Added flag to indicate if there's selected text
+    hasSelection: selectedText.length > 0
   };
 }
 
@@ -48,7 +75,7 @@ let currentSelection = '';
 
 // Monitor text selection changes
 document.addEventListener('selectionchange', function() {
-  currentSelection = window.getSelection().toString().trim();
+  currentSelection = getAllSelections();
   
   // Notify the extension about the selection change
   if (currentSelection) {
@@ -71,7 +98,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   
   if (message.action === 'getSelectedText') {
     // Force a fresh check of the selection
-    const selection = window.getSelection().toString().trim();
+    const selection = getAllSelections();
     sendResponse({ selectedText: selection || currentSelection });
     return true;
   }
@@ -79,6 +106,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'clearSelection') {
     // Clear the current selection
     window.getSelection().removeAllRanges();
+    // Try to clear selections in iframes
+    const iframes = document.getElementsByTagName('iframe');
+    for (let iframe of iframes) {
+      try {
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        iframeDoc.getSelection().removeAllRanges();
+      } catch (e) {
+        console.log('Cannot access iframe content:', e);
+      }
+    }
     sendResponse({ success: true });
     return true;
   }
