@@ -41,6 +41,12 @@ document.addEventListener('DOMContentLoaded', function() {
   // Add flag to track if message is being sent
   let isSendingMessage = false;
 
+  // Conversation history for multi-turn chat
+  let conversationHistory = [];
+  
+  // Maximum number of turns to keep in history (to prevent context from getting too long)
+  const MAX_HISTORY_TURNS = 20;
+
   // Initialize model selector
   function initializeModelSelector() {
     // Add vLLM option
@@ -65,8 +71,72 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  // Save conversation history to Chrome storage
+  function saveConversationHistory() {
+    chrome.storage.local.set({ conversationHistory: conversationHistory });
+  }
+
+  // Load conversation history from Chrome storage
+  function loadConversationHistory() {
+    chrome.storage.local.get(['conversationHistory'], function(result) {
+      if (result.conversationHistory && Array.isArray(result.conversationHistory)) {
+        conversationHistory = result.conversationHistory;
+        // Restore the UI
+        conversationHistory.forEach(msg => {
+          if (msg.role === 'user') {
+            addMessageToUI(msg.content, true);
+          } else if (msg.role === 'assistant') {
+            addMessageToUI(msg.content, false);
+          }
+        });
+      }
+    });
+  }
+
+  // Clear conversation history
+  function clearConversationHistory() {
+    if (confirm('Are you sure you want to clear the conversation history?')) {
+      conversationHistory = [];
+      chatMessages.innerHTML = '';
+      saveConversationHistory();
+    }
+  }
+
+  // Add clear history button to the model selector area
+  function addClearHistoryButton() {
+    const modelSelectorDiv = document.querySelector('.model-selector');
+    const clearButton = document.createElement('button');
+    clearButton.id = 'clear-history';
+    clearButton.textContent = '🗑️ Clear';
+    clearButton.title = 'Clear conversation history';
+    clearButton.style.marginLeft = '8px';
+    clearButton.style.fontSize = '13px';
+    clearButton.style.padding = '6px 12px';
+    clearButton.style.backgroundColor = '#6c757d';
+    clearButton.style.color = 'white';
+    clearButton.style.border = 'none';
+    clearButton.style.borderRadius = '6px';
+    clearButton.style.cursor = 'pointer';
+    clearButton.style.transition = 'all 0.2s ease-in-out';
+    
+    clearButton.addEventListener('mouseover', () => {
+      clearButton.style.backgroundColor = '#5a6268';
+      clearButton.style.transform = 'translateY(-1px)';
+    });
+    
+    clearButton.addEventListener('mouseout', () => {
+      clearButton.style.backgroundColor = '#6c757d';
+      clearButton.style.transform = 'translateY(0)';
+    });
+    
+    clearButton.addEventListener('click', clearConversationHistory);
+    modelSelectorDiv.appendChild(clearButton);
+  }
+
   // Initialize model selector
   initializeModelSelector();
+  addClearHistoryButton();
+  loadConversationHistory();
 
   // Save model preference when changed
   modelSelect.addEventListener('change', function() {
@@ -165,6 +235,14 @@ document.addEventListener('DOMContentLoaded', function() {
   async function sendMessage(message) {
     console.log('Sending message:', message);
     
+    // Add user message to conversation history
+    conversationHistory.push({ role: 'user', content: message });
+    
+    // Trim conversation history if it's too long
+    if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+      conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+    }
+    
     try {
       const selectedModel = modelSelect.value;
       const isVllm = selectedModel === 'vllm';
@@ -176,22 +254,12 @@ document.addEventListener('DOMContentLoaded', function() {
       const requestBody = isVllm
         ? {
             model: MODEL_CONFIG.vllm.model,
-            messages: [
-              {
-                role: "user",
-                content: message
-              }
-            ],
+            messages: conversationHistory, // Send full conversation history
             ...MODEL_CONFIG.vllm.params
           }
         : {
             model: selectedModel,
-            messages: [
-              {
-                role: "user",
-                content: message
-              }
-            ],
+            messages: conversationHistory, // Send full conversation history
             ...MODEL_CONFIG.ollama.models[selectedModel].params
           };
 
@@ -269,15 +337,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       }
 
+      // Add assistant message to conversation history
+      conversationHistory.push({ role: 'assistant', content: assistantMessage });
+      saveConversationHistory();
+      
       return assistantMessage;
     } catch (error) {
       console.error('Error:', error);
-      return `Sorry, there was an error processing your request: ${error.message}`;
+      const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
+      
+      // Still add error message to history for context
+      conversationHistory.push({ role: 'assistant', content: errorMessage });
+      saveConversationHistory();
+      
+      return errorMessage;
     }
   }
 
-  // Add message to chat
-  function addMessage(message, isUser = false) {
+  // Add message to chat UI only
+  function addMessageToUI(message, isUser = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
     messageDiv.innerHTML = marked.parse(message);
@@ -300,6 +378,11 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Scroll to bottom
     chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  // Add message to chat
+  function addMessage(message, isUser = false) {
+    addMessageToUI(message, isUser);
   }
 
   // Add auto-resize functionality to input
