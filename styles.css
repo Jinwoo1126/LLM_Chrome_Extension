@@ -366,30 +366,56 @@ select:focus {
   display: flex;
   gap: 8px;
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.selection-buttons button {
+  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 100px;
+  justify-content: center;
 }
 
 #use-selection {
-  font-size: 13px;
-  padding: 6px 12px;
   background-color: #28a745;
-  transition: all 0.2s ease-in-out;
+}
+
+#summarize-selection {
+  background-color: #fd7e14;  /* Changed to orange */
+}
+
+#translate-selection {
+  background-color: #6f42c1;
 }
 
 #reset-selection {
-  font-size: 13px;
-  padding: 6px 12px;
   background-color: #dc3545;
-  transition: all 0.2s ease-in-out;
 }
 
-#reset-selection:hover {
-  background-color: #c82333;
+.selection-buttons button:hover {
   transform: translateY(-1px);
+  filter: brightness(1.1);
 }
 
 #use-selection:hover {
   background-color: #218838;
-  transform: translateY(-1px);
+}
+
+#summarize-selection:hover {
+  background-color: #e76a00;  /* Darker orange for hover */
+}
+
+#translate-selection:hover {
+  background-color: #5a32a3;
+}
+
+#reset-selection:hover {
+  background-color: #c82333;
 }
 
 /* Add new styles for selection stored state */
