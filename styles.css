@@ -302,6 +302,79 @@ body {
   margin: 0.5em 0;
 }
 
+.assistant-message h1 {
+  font-size: 1.4em;
+  margin: 0.8em 0 0.5em;
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+.assistant-message h2 {
+  font-size: 1.3em;
+  margin: 0.7em 0 0.4em;
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+.assistant-message h3 {
+  font-size: 1.2em;
+  margin: 0.6em 0 0.4em;
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+.assistant-message h4 {
+  font-size: 1.1em;
+  margin: 0.5em 0 0.3em;
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+.assistant-message h5, .assistant-message h6 {
+  font-size: 1em;
+  margin: 0.4em 0 0.3em;
+  color: #1E40AF;
+  font-weight: 600;
+}
+
+/* Table styles */
+.assistant-message table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+  font-size: 0.9em;
+  border: 1px solid #E9D5FF;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.assistant-message th {
+  background-color: #F3E8FF;
+  color: #6B21A8;
+  font-weight: 600;
+  text-align: left;
+  padding: 0.75em 1em;
+  border-bottom: 2px solid #E9D5FF;
+}
+
+.assistant-message td {
+  padding: 0.75em 1em;
+  border-bottom: 1px solid #E9D5FF;
+  color: #334155;
+}
+
+.assistant-message tr:last-child td {
+  border-bottom: none;
+}
+
+.assistant-message tr:nth-child(even) {
+  background-color: #FAF5FF;
+}
+
+.assistant-message tr:hover {
+  background-color: #F3E8FF;
+}
+
 .assistant-message pre {
   background-color: #FFFFFF;
   border-radius: 8px;
@@ -485,21 +558,18 @@ select:focus {
   width: 100%;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
   animation: slideDown 0.3s ease-in-out;
-}
-
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  transition: all 0.3s ease-in-out;
+  max-height: 500px;
+  overflow: hidden;
 }
 
 .selection-info.hidden {
   display: none;
+  margin: 0;
+  padding: 0;
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
 }
 
 .selection-header {
@@ -536,11 +606,16 @@ select:focus {
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
-  transition: max-height 0.3s ease-in-out;
+  transition: all 0.3s ease-in-out;
+  max-height: 500px;
 }
 
 .selection-content.collapsed {
   max-height: 0;
+  opacity: 0;
+  transform: translateY(-10px);
+  margin: 0;
+  padding: 0;
 }
 
 .selection-text {
@@ -800,4 +875,21 @@ body.popup-mode .model-selector select {
 
 body.popup-mode .chat-container {
   height: calc(100% - 49px); /* Adjust for smaller header in popup mode */
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+    max-height: 0;
+    margin: 0;
+    padding: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 500px;
+    margin-bottom: 16px;
+    padding: 16px;
+  }
 }
