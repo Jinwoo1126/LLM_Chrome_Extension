@@ -6,14 +6,22 @@
   <link rel="stylesheet" href="styles.css">
   <link rel="stylesheet" href="highlight.css">
 </head>
-<body>
+<body class="popup-mode">
   <div class="container">
-    <div class="chat-container">
-      <div class="model-selector">
-        <select id="model-select">
-          <!-- Options will be populated dynamically -->
-        </select>
+    <div class="header">
+      <div class="header-content">
+        <div class="logo">
+          <img src="icons/icon32.png" alt="LLM Chat Icon" class="logo-icon">
+          <span>LLM Chat</span>
+        </div>
+        <div class="model-selector">
+          <select id="model-select">
+            <!-- Options will be populated dynamically -->
+          </select>
+        </div>
       </div>
+    </div>
+    <div class="chat-container">
       <div id="chat-messages" class="chat-messages"></div>
       <div id="selection-info" class="selection-info hidden">
         <div class="selection-header">
@@ -26,6 +34,8 @@
           <div class="selection-text" id="selection-preview"></div>
           <div class="selection-buttons">
             <button id="use-selection" title="선택한 텍스트만 사용">📋 Use Selection</button>
+            <button id="summarize-selection" title="선택한 텍스트 요약">📝 Summarize</button>
+            <button id="translate-selection" title="한국어로 번역">🌐 Translate</button>
             <button id="reset-selection" title="선택 초기화">🔄 Reset</button>
           </div>
         </div>
