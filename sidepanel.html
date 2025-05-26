@@ -8,12 +8,20 @@
 </head>
 <body class="side-panel-mode">
   <div class="container">
-    <div class="chat-container">
-      <div class="model-selector">
-        <select id="model-select">
-          <!-- Options will be populated dynamically -->
-        </select>
+    <div class="header">
+      <div class="header-content">
+        <div class="logo">
+          <img src="icons/icon32.png" alt="LLM Chat Icon" class="logo-icon">
+          <span>LLM Chat</span>
+        </div>
+        <div class="model-selector">
+          <select id="model-select">
+            <!-- Options will be populated dynamically -->
+          </select>
+        </div>
       </div>
+    </div>
+    <div class="chat-container">
       <div id="chat-messages" class="chat-messages"></div>
       <div id="selection-info" class="selection-info hidden">
         <div class="selection-header">
