@@ -29,6 +29,22 @@ chrome.runtime.onInstalled.addListener(() => {
     title: 'Open in Side Panel',
     contexts: ['selection']
   });
+
+  // Create a menu item for summarizing in side panel
+  chrome.contextMenus.create({
+    id: 'summarize-in-side-panel',
+    parentId: 'llm-extension',
+    title: 'Summarize in Side Panel',
+    contexts: ['selection']
+  });
+
+  // Create a menu item for translating in side panel
+  chrome.contextMenus.create({
+    id: 'translate-in-side-panel',
+    parentId: 'llm-extension',
+    title: 'Translate to Korean in Side Panel',
+    contexts: ['selection']
+  });
 });
 
 // Handle context menu clicks
@@ -58,6 +74,28 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
     currentSelection = info.selectionText || '';
     chrome.storage.local.set({ 
       'contextAction': 'selection',
+      'contextSelection': currentSelection,
+      'activeTabId': tab.id
+    }, () => {
+      // 사이드패널 열기
+      chrome.sidePanel.open({ windowId: tab.windowId });
+    });
+  } else if (info.menuItemId === 'summarize-in-side-panel') {
+    // 선택된 텍스트와 탭 ID를 저장하고 사이드패널에서 요약
+    currentSelection = info.selectionText || '';
+    chrome.storage.local.set({ 
+      'contextAction': 'summarize',
+      'contextSelection': currentSelection,
+      'activeTabId': tab.id
+    }, () => {
+      // 사이드패널 열기
+      chrome.sidePanel.open({ windowId: tab.windowId });
+    });
+  } else if (info.menuItemId === 'translate-in-side-panel') {
+    // 선택된 텍스트와 탭 ID를 저장하고 사이드패널에서 번역
+    currentSelection = info.selectionText || '';
+    chrome.storage.local.set({ 
+      'contextAction': 'translate',
       'contextSelection': currentSelection,
       'activeTabId': tab.id
     }, () => {
@@ -182,16 +220,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // New message handler for checking context actions
   if (message.action === 'checkContextAction') {
-    chrome.storage.local.get(['contextAction', 'contextSelection'], (result) => {
-      if (result.contextAction) {
-        // Send back the context action and clear it
+    chrome.storage.local.get(['contextAction', 'contextSelection', 'actionProcessed'], (result) => {
+      if (result.contextAction && !result.actionProcessed) {
+        // Send back the context action and mark it as processed
         sendResponse({ 
           action: result.contextAction,
           selection: result.contextSelection || currentSelection 
         });
         
+        // Mark the action as processed
+        chrome.storage.local.set({ actionProcessed: true });
+        
         // Clear the stored context action after it's been used
-        chrome.storage.local.remove(['contextAction', 'contextSelection']);
+        setTimeout(() => {
+          chrome.storage.local.remove(['contextAction', 'contextSelection', 'actionProcessed']);
+        }, 1000); // Give enough time for the action to be processed
       } else {
         sendResponse({ action: null });
       }

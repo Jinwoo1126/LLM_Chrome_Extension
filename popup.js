@@ -37,9 +37,12 @@ document.addEventListener('DOMContentLoaded', function() {
   let isSelectionStored = false;
   // Track selection content visibility
   let isSelectionContentVisible = true;
-
   // Add flag to track if message is being sent
   let isSendingMessage = false;
+  // Add flag to track if an action is being processed
+  let isProcessingAction = false;
+  // Add flag to track if we've already handled the initial context action
+  let hasHandledInitialAction = false;
 
   // Conversation history for multi-turn chat
   let conversationHistory = [];
@@ -147,6 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function resetSelection() {
     currentSelection = '';
     isSelectionStored = false;
+    hasHandledInitialAction = false;
     selectionPreview.textContent = '';
     selectionInfo.classList.add('hidden');
     useSelectionButton.textContent = '📋 Use Selection';
@@ -172,12 +176,48 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Check for selected text when popup opens
   function checkForSelection() {
-    chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
-      if (response && response.selectedText) {
-        currentSelection = response.selectedText;
-        console.log('Selection received:', currentSelection);
-        // If text is selected, show it in the UI
-        updateSelectionUI(currentSelection);
+    // First check if we have a context action
+    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
+      if (response && response.action && !hasHandledInitialAction) {
+        hasHandledInitialAction = true;
+        currentSelection = response.selection || '';
+        if (currentSelection) {
+          console.log('Selection from context:', currentSelection);
+          updateSelectionUI(currentSelection);
+          
+          // Automatically set selection ready and perform action based on context
+          isSelectionStored = true;
+          useSelectionButton.textContent = '✅ Selection Ready';
+          useSelectionButton.classList.add('selection-stored');
+          
+          // Perform the requested action
+          if (response.action === 'summarize') {
+            handleSummarize();
+          } else if (response.action === 'translate') {
+            handleTranslate();
+          }
+        }
+        return;
+      }
+      
+      // If no context action or no selection, check current selection
+      if (!hasHandledInitialAction) {
+        chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
+          if (response && response.selectedText) {
+            currentSelection = response.selectedText;
+            console.log('Selection received:', currentSelection);
+            // If text is selected, show it in the UI
+            updateSelectionUI(currentSelection);
+            
+            // Check if we're in side panel mode and automatically set selection ready
+            const isSidePanel = window.location.search.includes('side_panel=true');
+            if (isSidePanel) {
+              isSelectionStored = true;
+              useSelectionButton.textContent = '✅ Selection Ready';
+              useSelectionButton.classList.add('selection-stored');
+            }
+          }
+        });
       }
     });
   }
@@ -436,10 +476,10 @@ document.addEventListener('DOMContentLoaded', function() {
           messageToSend = formattedFullSelection; // LLM 전송용
         }
         
-        // Reset selection stored state after using it
-        isSelectionStored = false;
-        useSelectionButton.textContent = '📋 Use Selection';
-        useSelectionButton.classList.remove('selection-stored');
+        // Remove the line that resets selection stored state
+        // isSelectionStored = false;
+        // useSelectionButton.textContent = '📋 Use Selection';
+        // useSelectionButton.classList.remove('selection-stored');
       }
       
       addMessage(displayMessage, true);
@@ -495,4 +535,42 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Initialize selection monitoring
   setupSelectionMonitoring();
+
+  // Handle summarize button click
+  document.getElementById('summarize-selection').addEventListener('click', handleSummarize);
+
+  // Handle translate button click
+  document.getElementById('translate-selection').addEventListener('click', handleTranslate);
+
+  // Function to handle summarization
+  async function handleSummarize() {
+    if (!currentSelection || isSendingMessage) return;
+    
+    isSendingMessage = true;
+    // Clear any existing messages
+    chatMessages.innerHTML = '';
+    
+    const message = `다음 텍스트를 간단하게 한국어로 요약해주세요:\n\n${currentSelection}`;
+    try {
+      await sendMessage(message);
+    } finally {
+      isSendingMessage = false;
+    }
+  }
+
+  // Function to handle translation
+  async function handleTranslate() {
+    if (!currentSelection || isSendingMessage) return;
+    
+    isSendingMessage = true;
+    // Clear any existing messages
+    chatMessages.innerHTML = '';
+    
+    const message = `다음 텍스트를 한국어로 번역해주세요:\n\n${currentSelection}`;
+    try {
+      await sendMessage(message);
+    } finally {
+      isSendingMessage = false;
+    }
+  }
 });
