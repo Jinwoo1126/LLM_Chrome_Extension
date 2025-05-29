@@ -176,21 +176,27 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Check for selected text when popup opens
   function checkForSelection() {
-    // First check if we have a context action
     chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-      if (response && response.action && !hasHandledInitialAction) {
-        hasHandledInitialAction = true;
-        currentSelection = response.selection || '';
-        if (currentSelection) {
+      const isSidePanel = window.location.search.includes('side_panel=true');
+      
+      // 사이드패널 모드에서는 항상 context action을 처리
+      if (response && response.action && response.selection) {
+        // 새로운 selection이나 action이 있으면 처리
+        const newSelection = response.selection || '';
+        const shouldUpdate = isSidePanel || !hasHandledInitialAction || newSelection !== currentSelection;
+        
+        if (shouldUpdate) {
+          if (!isSidePanel) hasHandledInitialAction = true;
+          
+          // selection이나 action이 바뀌었으면 갱신
+          currentSelection = newSelection;
           console.log('Selection from context:', currentSelection);
           updateSelectionUI(currentSelection);
-          
-          // Automatically set selection ready and perform action based on context
           isSelectionStored = true;
           useSelectionButton.textContent = '✅ Selection Ready';
           useSelectionButton.classList.add('selection-stored');
           
-          // Perform the requested action
+          // action 실행
           if (response.action === 'summarize') {
             handleSummarize();
           } else if (response.action === 'translate') {
@@ -200,17 +206,14 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       
-      // If no context action or no selection, check current selection
-      if (!hasHandledInitialAction) {
+      // context action이 없을 때는 현재 selection 확인
+      if (!hasHandledInitialAction || isSidePanel) {
         chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
-          if (response && response.selectedText) {
+          if (response && response.selectedText && response.selectedText !== currentSelection) {
             currentSelection = response.selectedText;
             console.log('Selection received:', currentSelection);
-            // If text is selected, show it in the UI
             updateSelectionUI(currentSelection);
             
-            // Check if we're in side panel mode and automatically set selection ready
-            const isSidePanel = window.location.search.includes('side_panel=true');
             if (isSidePanel) {
               isSelectionStored = true;
               useSelectionButton.textContent = '✅ Selection Ready';
@@ -465,12 +468,12 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>`;
         
         // LLM에 보내는 실제 메시지에는 전체 선택 텍스트를 포함
-        const formattedFullSelection = `Selected text: "${currentSelection}"`;
+        const formattedFullSelection = `[Selected text]: \n"${currentSelection}"`;
         
         // Add selection to messages
         if (message) {
           displayMessage = message + formattedDisplaySelection; // UI 표시용
-          messageToSend = message + '\n\n' + formattedFullSelection; // LLM 전송용
+          messageToSend = '<start_of_turn>system [Selected text]부분을 참고하여 주어진 [지시사항]에 한국어로 답변해주세요.<end_of_turn>' + formattedFullSelection + '\n\n[지시사항]' + message + '\n\n답변:'; // LLM 전송용
         } else {
           displayMessage = formattedDisplaySelection; // UI 표시용
           messageToSend = formattedFullSelection; // LLM 전송용
@@ -550,7 +553,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clear any existing messages
     chatMessages.innerHTML = '';
     
-    const message = `다음 텍스트를 간단하게 한국어로 요약해주세요:\n\n${currentSelection}`;
+    const message = `다음 텍스트를 이해하기 쉽게 한국어로 요약해주세요:\n\n[텍스트] ${currentSelection} \n\n요약 :`;
     try {
       await sendMessage(message);
     } finally {
@@ -566,7 +569,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clear any existing messages
     chatMessages.innerHTML = '';
     
-    const message = `다음 텍스트를 한국어로 번역해주세요:\n\n${currentSelection}`;
+    const message = `아래 텍스트를 한국어로 번역해주세요:\n\n[텍스트] ${currentSelection} \n\n번역 :`;
     try {
       await sendMessage(message);
     } finally {
