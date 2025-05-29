@@ -337,33 +337,35 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Received chunk:', chunk);
         
         try {
-          // Handle OpenAI-compatible streaming format
+          // Handle OpenAI-compatible streaming format (vLLM)
           if (isVllm) {
-            // Split by double newlines as each chunk is a separate JSON object
-            const lines = chunk.split('\n\n');
+            // Split by newlines as each line is a separate JSON object
+            const lines = chunk.split('\n');
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const jsonStr = line.slice(6); // Remove 'data: ' prefix
-                if (jsonStr === '[DONE]') continue;
-                
-                try {
-                  const parsed = JSON.parse(jsonStr);
-                  const content = parsed.choices?.[0]?.delta?.content || '';
-                  if (content) {
-                    assistantMessage += content;
-                    messageDiv.innerHTML = marked.parse(assistantMessage);
-                    messageDiv.querySelectorAll('pre code').forEach((block) => {
-                      hljs.highlightElement(block);
-                    });
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
+              if (line.trim()) { // Skip empty lines
+                if (line.startsWith('data: ')) {
+                  const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
+                  if (jsonStr === '[DONE]') continue;
+                  
+                  try {
+                    const parsed = JSON.parse(jsonStr);
+                    const content = parsed.choices?.[0]?.delta?.content || '';
+                    if (content) {
+                      assistantMessage += content;
+                      messageDiv.innerHTML = marked.parse(assistantMessage);
+                      messageDiv.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                      });
+                      chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                  } catch (e) {
+                    console.error('Error parsing vLLM chunk:', e, jsonStr);
                   }
-                } catch (e) {
-                  console.error('Error parsing vLLM chunk:', e);
                 }
               }
             }
           } else {
-            // Handle Ollama format
+            // Handle Ollama format - single JSON object per chunk
             const parsed = JSON.parse(chunk);
             const content = parsed.message?.content || '';
             if (content) {
@@ -376,7 +378,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
           }
         } catch (e) {
-          console.error('Error parsing streaming response:', e);
+          console.error('Error parsing streaming response:', e, chunk);
         }
       }
 
