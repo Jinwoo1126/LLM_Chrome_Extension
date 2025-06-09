@@ -36,11 +36,11 @@ window.apiConfig = apiConfig;
 
 const MODEL_CONFIG = {
   vllm: {
-    endpoint: '...',
-    model: '...',
+    endpoint: 'https://gen-ai-lab-lges001.lgensol.com:30981/api/infer/MDL30000234/v1/chat/completions',
+    model: '/infer-model/1_MDL30000234/binary/base/gemma-3-12b-it',
     params: {
       temperature: 0.7,
-      max_tokens: 1000,
+      max_tokens: 8192,
       stream: true
     }
   },

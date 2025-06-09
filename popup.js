@@ -44,6 +44,12 @@ document.addEventListener('DOMContentLoaded', function() {
   // Add flag to track if we've already handled the initial context action
   let hasHandledInitialAction = false;
 
+  // Conversation history for multi-turn chat
+  let conversationHistory = [];
+  
+  // Maximum number of turns to keep in history (to prevent context from getting too long)
+  const MAX_HISTORY_TURNS = 20;
+
   // Initialize model selector
   function initializeModelSelector() {
     // Add vLLM option
@@ -66,10 +72,75 @@ document.addEventListener('DOMContentLoaded', function() {
         modelSelect.value = result.selectedModel;
       }
     });
+
+    // Hide model selector but keep the container visible for clear button
+    modelSelect.style.display = 'none';
+  }
+
+  // Save conversation history to Chrome storage
+  function saveConversationHistory() {
+    chrome.storage.local.set({ conversationHistory: conversationHistory });
+  }
+
+  // Load conversation history from Chrome storage
+  function loadConversationHistory() {
+    chrome.storage.local.get(['conversationHistory'], function(result) {
+      if (result.conversationHistory && Array.isArray(result.conversationHistory)) {
+        conversationHistory = result.conversationHistory;
+        
+        // UI 복원 시 저장된 형식 그대로 표시
+        chatMessages.innerHTML = ''; // 기존 메시지 초기화
+        conversationHistory.forEach(msg => {
+          addMessageToUI(msg.content, msg.role === 'user');
+        });
+      }
+    });
+  }
+
+  // Clear conversation history
+  function clearConversationHistory() {
+    if (confirm('Are you sure you want to clear the conversation history?')) {
+      conversationHistory = [];
+      chatMessages.innerHTML = '';
+      saveConversationHistory();
+    }
+  }
+
+  // Add clear history button to the model selector area
+  function addClearHistoryButton() {
+    const modelSelectorDiv = document.querySelector('.model-selector');
+    const clearButton = document.createElement('button');
+    clearButton.id = 'clear-history';
+    clearButton.textContent = '🗑️ Clear';
+    clearButton.title = 'Clear conversation history';
+    clearButton.style.marginLeft = '8px';
+    clearButton.style.fontSize = '13px';
+    clearButton.style.padding = '6px 12px';
+    clearButton.style.backgroundColor = '#6c757d';
+    clearButton.style.color = 'white';
+    clearButton.style.border = 'none';
+    clearButton.style.borderRadius = '6px';
+    clearButton.style.cursor = 'pointer';
+    clearButton.style.transition = 'all 0.2s ease-in-out';
+    
+    clearButton.addEventListener('mouseover', () => {
+      clearButton.style.backgroundColor = '#5a6268';
+      clearButton.style.transform = 'translateY(-1px)';
+    });
+    
+    clearButton.addEventListener('mouseout', () => {
+      clearButton.style.backgroundColor = '#6c757d';
+      clearButton.style.transform = 'translateY(0)';
+    });
+    
+    clearButton.addEventListener('click', clearConversationHistory);
+    modelSelectorDiv.appendChild(clearButton);
   }
 
   // Initialize model selector
   initializeModelSelector();
+  addClearHistoryButton();
+  loadConversationHistory();
 
   // Save model preference when changed
   modelSelect.addEventListener('change', function() {
@@ -80,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function resetSelection() {
     currentSelection = '';
     isSelectionStored = false;
-    hasHandledInitialAction = false;
+    hasHandledInitialAction = false;  // 이 플래그를 초기화하여 새 선택을 감지할 수 있게 함
     selectionPreview.textContent = '';
     selectionInfo.classList.add('hidden');
     useSelectionButton.textContent = '📋 Use Selection';
@@ -106,21 +177,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Check for selected text when popup opens
   function checkForSelection() {
-    // First check if we have a context action
     chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-      if (response && response.action && !hasHandledInitialAction) {
-        hasHandledInitialAction = true;
-        currentSelection = response.selection || '';
-        if (currentSelection) {
+      const isSidePanel = window.location.search.includes('side_panel=true');
+      
+      // 사이드패널 모드에서는 항상 context action을 처리
+      if (response && response.action && response.selection) {
+        // 새로운 selection이나 action이 있으면 처리
+        const newSelection = response.selection || '';
+        
+        // 탭 변경 후에도 새로운 selection을 감지하도록 수정
+        const shouldUpdate = isSidePanel || newSelection !== currentSelection;
+        
+        if (shouldUpdate) {
+          // selection이나 action이 바뀌었으면 갱신
+          currentSelection = newSelection;
           console.log('Selection from context:', currentSelection);
           updateSelectionUI(currentSelection);
-          
-          // Automatically set selection ready and perform action based on context
           isSelectionStored = true;
           useSelectionButton.textContent = '✅ Selection Ready';
           useSelectionButton.classList.add('selection-stored');
           
-          // Perform the requested action
           if (response.action === 'summarize') {
             handleSummarize();
           } else if (response.action === 'translate') {
@@ -130,25 +206,20 @@ document.addEventListener('DOMContentLoaded', function() {
         return;
       }
       
-      // If no context action or no selection, check current selection
-      if (!hasHandledInitialAction) {
-        chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
-          if (response && response.selectedText) {
-            currentSelection = response.selectedText;
-            console.log('Selection received:', currentSelection);
-            // If text is selected, show it in the UI
-            updateSelectionUI(currentSelection);
-            
-            // Check if we're in side panel mode and automatically set selection ready
-            const isSidePanel = window.location.search.includes('side_panel=true');
-            if (isSidePanel) {
-              isSelectionStored = true;
-              useSelectionButton.textContent = '✅ Selection Ready';
-              useSelectionButton.classList.add('selection-stored');
-            }
+      // context action이 없을 때는 현재 selection 확인 - hasHandledInitialAction 체크 제거
+      chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
+        if (response && response.selectedText && response.selectedText !== currentSelection) {
+          currentSelection = response.selectedText;
+          console.log('Selection received:', currentSelection);
+          updateSelectionUI(currentSelection);
+          
+          if (isSidePanel) {
+            isSelectionStored = true;
+            useSelectionButton.textContent = '✅ Selection Ready';
+            useSelectionButton.classList.add('selection-stored');
           }
-        });
-      }
+        }
+      });
     });
   }
   
@@ -205,6 +276,18 @@ document.addEventListener('DOMContentLoaded', function() {
   async function sendMessage(message) {
     console.log('Sending message:', message);
     
+    // 시스템 프롬프트와 사용자 메시지 분리
+    const systemPrompt = '<start_of_turn>system [Selected text]부분을 참고하여 주어진 [지시사항]에 한국어로 답변해주세요.<end_of_turn>';
+    const actualMessage = message.replace(systemPrompt, '').replace(/^\[선택된 텍스트\]\n/, '').replace(/\n\n\[지시사항\]\n/, ' - ');
+    
+    // 대화 기록에는 정제된 메시지 저장
+    conversationHistory.push({ role: 'user', content: actualMessage });
+    
+    // Trim conversation history if it's too long
+    if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+      conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+    }
+    
     try {
       const selectedModel = modelSelect.value;
       const isVllm = selectedModel === 'vllm';
@@ -216,22 +299,12 @@ document.addEventListener('DOMContentLoaded', function() {
       const requestBody = isVllm
         ? {
             model: MODEL_CONFIG.vllm.model,
-            messages: [
-              {
-                role: "user",
-                content: message
-              }
-            ],
+            messages: conversationHistory, // Send full conversation history
             ...MODEL_CONFIG.vllm.params
           }
         : {
             model: selectedModel,
-            messages: [
-              {
-                role: "user",
-                content: message
-              }
-            ],
+            messages: conversationHistory, // Send full conversation history
             ...MODEL_CONFIG.ollama.models[selectedModel].params
           };
 
@@ -266,33 +339,35 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Received chunk:', chunk);
         
         try {
-          // Handle OpenAI-compatible streaming format
+          // Handle OpenAI-compatible streaming format (vLLM)
           if (isVllm) {
-            // Split by double newlines as each chunk is a separate JSON object
-            const lines = chunk.split('\n\n');
+            // Split by newlines as each line is a separate JSON object
+            const lines = chunk.split('\n');
             for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const jsonStr = line.slice(6); // Remove 'data: ' prefix
-                if (jsonStr === '[DONE]') continue;
-                
-                try {
-                  const parsed = JSON.parse(jsonStr);
-                  const content = parsed.choices?.[0]?.delta?.content || '';
-                  if (content) {
-                    assistantMessage += content;
-                    messageDiv.innerHTML = marked.parse(assistantMessage);
-                    messageDiv.querySelectorAll('pre code').forEach((block) => {
-                      hljs.highlightElement(block);
-                    });
-                    chatMessages.scrollTop = chatMessages.scrollHeight;
+              if (line.trim()) { // Skip empty lines
+                if (line.startsWith('data: ')) {
+                  const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
+                  if (jsonStr === '[DONE]') continue;
+                  
+                  try {
+                    const parsed = JSON.parse(jsonStr);
+                    const content = parsed.choices?.[0]?.delta?.content || '';
+                    if (content) {
+                      assistantMessage += content;
+                      messageDiv.innerHTML = marked.parse(assistantMessage);
+                      messageDiv.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                      });
+                      chatMessages.scrollTop = chatMessages.scrollHeight;
+                    }
+                  } catch (e) {
+                    console.error('Error parsing vLLM chunk:', e, jsonStr);
                   }
-                } catch (e) {
-                  console.error('Error parsing vLLM chunk:', e);
                 }
               }
             }
           } else {
-            // Handle Ollama format
+            // Handle Ollama format - single JSON object per chunk
             const parsed = JSON.parse(chunk);
             const content = parsed.message?.content || '';
             if (content) {
@@ -305,19 +380,29 @@ document.addEventListener('DOMContentLoaded', function() {
             }
           }
         } catch (e) {
-          console.error('Error parsing streaming response:', e);
+          console.error('Error parsing streaming response:', e, chunk);
         }
       }
 
+      // Add assistant message to conversation history
+      conversationHistory.push({ role: 'assistant', content: assistantMessage });
+      saveConversationHistory();
+      
       return assistantMessage;
     } catch (error) {
       console.error('Error:', error);
-      return `Sorry, there was an error processing your request: ${error.message}`;
+      const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
+      
+      // Still add error message to history for context
+      conversationHistory.push({ role: 'assistant', content: errorMessage });
+      saveConversationHistory();
+      
+      return errorMessage;
     }
   }
 
-  // Add message to chat
-  function addMessage(message, isUser = false) {
+  // Add message to chat UI only
+  function addMessageToUI(message, isUser = false) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
     messageDiv.innerHTML = marked.parse(message);
@@ -342,6 +427,11 @@ document.addEventListener('DOMContentLoaded', function() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
   }
 
+  // Add message to chat
+  function addMessage(message, isUser = false) {
+    addMessageToUI(message, isUser);
+  }
+
   // Add auto-resize functionality to input
   userInput.addEventListener('input', function() {
     this.style.height = 'auto';
@@ -350,24 +440,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Reset input height when message is sent
   sendButton.addEventListener('click', async function() {
-    if (isSendingMessage) return; // Prevent multiple submissions
+    if (isSendingMessage) return;
     
     const message = userInput.value.trim();
-    let displayMessage = message;
-    let messageToSend = message;
-    
-    if (messageToSend) {
-      isSendingMessage = true; // Set flag before sending
-      userInput.disabled = true; // Disable input while sending
+    if (message) {
+      isSendingMessage = true;
+      userInput.disabled = true;
       
-      // If selection is stored, add it to the message internally
+      let displayMessage = message;
+      let messageToSend = message;
+      
       if (isSelectionStored && currentSelection) {
-        // UI에 표시되는 메시지용 간략한 형식
         const maxLength = 100;
         const truncatedText = currentSelection.length > maxLength 
-          ? currentSelection.substring(0, maxLength) + '...'
+          ? currentSelection.substring(0, maxLength) + '...' 
           : currentSelection;
 
+        // UI 표시용 포맷팅
         const formattedDisplaySelection = `
 <div class="message-selection">
   <div class="message-selection-header">
@@ -380,35 +469,24 @@ document.addEventListener('DOMContentLoaded', function() {
     <pre>${truncatedText}</pre>
   </div>
 </div>`;
-        
-        // LLM에 보내는 실제 메시지에는 전체 선택 텍스트를 포함
-        const formattedFullSelection = `Selected text: "${currentSelection}"`;
-        
-        // Add selection to messages
-        if (message) {
-          displayMessage = message + formattedDisplaySelection; // UI 표시용
-          messageToSend = message + '\n\n' + formattedFullSelection; // LLM 전송용
-        } else {
-          displayMessage = formattedDisplaySelection; // UI 표시용
-          messageToSend = formattedFullSelection; // LLM 전송용
-        }
-        
-        // Remove the line that resets selection stored state
-        // isSelectionStored = false;
-        // useSelectionButton.textContent = '📋 Use Selection';
-        // useSelectionButton.classList.remove('selection-stored');
+
+        displayMessage = message + formattedDisplaySelection;
+        // LLM 전송용 메시지
+        messageToSend = '<start_of_turn>system [Selected text]부분을 참고하여 주어진 [지시사항]에 한국어로 답변해주세요.<end_of_turn>' + 
+                       `[Selected text]: \n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`;
       }
       
+      // UI에 표시
       addMessage(displayMessage, true);
       userInput.value = '';
-      userInput.style.height = 'auto'; // Reset height
+      userInput.style.height = 'auto';
       
       try {
         await sendMessage(messageToSend);
       } finally {
-        isSendingMessage = false; // Reset flag after sending
-        userInput.disabled = false; // Re-enable input
-        userInput.focus(); // Focus back on input
+        isSendingMessage = false;
+        userInput.disabled = false;
+        userInput.focus();
       }
     }
   });
@@ -444,6 +522,16 @@ document.addEventListener('DOMContentLoaded', function() {
       checkForSelection();
     }, 1000);
     
+    // Listen for tab changes
+    chrome.tabs.onActivated.addListener(() => {
+      resetSelection();
+      // 탭 전환 후 새로운 선택을 확인하기 위한 시간을 충분히 줌
+      setTimeout(() => {
+        hasHandledInitialAction = false;  // 새 탭에서의 선택을 감지하기 위해 플래그 초기화
+        checkForSelection();
+      }, 300); // 시간을 300ms로 증가
+    });
+
     // Clean up interval when popup closes
     window.addEventListener('unload', () => {
       clearInterval(selectionInterval);
@@ -464,12 +552,15 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!currentSelection || isSendingMessage) return;
     
     isSendingMessage = true;
-    // Clear any existing messages
     chatMessages.innerHTML = '';
     
-    const message = `다음 텍스트를 간단하게 한국어로 요약해주세요:\n\n${currentSelection}`;
+    const displayMessage = '선택한 텍스트 요약';
+    const messageToSend = `다음 텍스트를 이해하기 쉽게 한국어로 요약해주세요:\n\n[텍스트] ${currentSelection} \n\n요약:`;
+    
+    addMessage(displayMessage, true);
+    
     try {
-      await sendMessage(message);
+      await sendMessage(messageToSend);
     } finally {
       isSendingMessage = false;
     }
@@ -480,12 +571,15 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!currentSelection || isSendingMessage) return;
     
     isSendingMessage = true;
-    // Clear any existing messages
     chatMessages.innerHTML = '';
     
-    const message = `다음 텍스트를 한국어로 번역해주세요:\n\n${currentSelection}`;
+    const displayMessage = '선택한 텍스트 번역';
+    const messageToSend = `아래 텍스트를 한국어로 번역해주세요:\n\n[텍스트] ${currentSelection} \n\n번역:`;
+    
+    addMessage(displayMessage, true);
+    
     try {
-      await sendMessage(message);
+      await sendMessage(messageToSend);
     } finally {
       isSendingMessage = false;
     }

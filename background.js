@@ -18,7 +18,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'ask-about-selection',
     parentId: 'llm-extension',
-    title: 'Ask LLM about selection',
+    title: '선택된 영역에 대해 "새 창"으로 열기',
     contexts: ['selection']
   });
 
@@ -26,7 +26,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'open-in-side-panel',
     parentId: 'llm-extension',
-    title: 'Open in Side Panel',
+    title: '선택된 영역에 대해 "사이드 패널"에서 열기',
     contexts: ['selection']
   });
 
@@ -34,17 +34,17 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: 'summarize-in-side-panel',
     parentId: 'llm-extension',
-    title: 'Summarize in Side Panel',
+    title: '선택된 영역에 대해 "요약"',
     contexts: ['selection']
   });
 
   // Create a menu item for translating in side panel
-  chrome.contextMenus.create({
-    id: 'translate-in-side-panel',
-    parentId: 'llm-extension',
-    title: 'Translate to Korean in Side Panel',
-    contexts: ['selection']
-  });
+  // chrome.contextMenus.create({
+  //   id: 'translate-in-side-panel',
+  //   parentId: 'llm-extension',
+  //   title: 'Translate to Korean in Side Panel',
+  //   contexts: ['selection']
+  // });
 });
 
 // Handle context menu clicks
