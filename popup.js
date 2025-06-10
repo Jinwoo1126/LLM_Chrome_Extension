@@ -43,12 +43,14 @@ document.addEventListener('DOMContentLoaded', function() {
   let isProcessingAction = false;
   // Add flag to track if we've already handled the initial context action
   let hasHandledInitialAction = false;
+  // Add flag to track chat mode (selection or normal)
+  let isSelectionMode = false;
 
   // Conversation history for multi-turn chat
   let conversationHistory = [];
   
   // Maximum number of turns to keep in history (to prevent context from getting too long)
-  const MAX_HISTORY_TURNS = 20;
+  const MAX_HISTORY_TURNS = 3;
 
   // Initialize model selector
   function initializeModelSelector() {
@@ -149,9 +151,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Reset selection function
   function resetSelection() {
+    // Reset selection state
     currentSelection = '';
     isSelectionStored = false;
-    hasHandledInitialAction = false;  // 이 플래그를 초기화하여 새 선택을 감지할 수 있게 함
+    isSelectionMode = false;  // Reset chat mode
+    hasHandledInitialAction = false;
+    
+    // Reset UI
     selectionPreview.textContent = '';
     selectionInfo.classList.add('hidden');
     useSelectionButton.textContent = '📋 Use Selection';
@@ -182,42 +188,39 @@ document.addEventListener('DOMContentLoaded', function() {
       
       // 사이드패널 모드에서는 항상 context action을 처리
       if (response && response.action && response.selection) {
-        // 새로운 selection이나 action이 있으면 처리
         const newSelection = response.selection || '';
+        currentSelection = newSelection;
+        console.log('Selection from context:', currentSelection);
+        updateSelectionUI(currentSelection);
+        isSelectionStored = true;
+        useSelectionButton.textContent = '✅ Selection Ready';
+        useSelectionButton.classList.add('selection-stored');
         
-        // 탭 변경 후에도 새로운 selection을 감지하도록 수정
-        const shouldUpdate = isSidePanel || newSelection !== currentSelection;
-        
-        if (shouldUpdate) {
-          // selection이나 action이 바뀌었으면 갱신
-          currentSelection = newSelection;
-          console.log('Selection from context:', currentSelection);
-          updateSelectionUI(currentSelection);
-          isSelectionStored = true;
-          useSelectionButton.textContent = '✅ Selection Ready';
-          useSelectionButton.classList.add('selection-stored');
-          
-          if (response.action === 'summarize') {
-            handleSummarize();
-          } else if (response.action === 'translate') {
-            handleTranslate();
-          }
+        if (response.action === 'summarize') {
+          handleSummarize();
+        } else if (response.action === 'translate') {
+          handleTranslate();
         }
         return;
       }
       
-      // context action이 없을 때는 현재 selection 확인 - hasHandledInitialAction 체크 제거
+      // context action이 없을 때는 현재 selection 확인
       chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
-        if (response && response.selectedText && response.selectedText !== currentSelection) {
+        if (response && response.selectedText) {
+          // 새로운 선택 텍스트가 있으면 항상 업데이트
           currentSelection = response.selectedText;
-          console.log('Selection received:', currentSelection);
+          console.log('New selection received:', currentSelection);
           updateSelectionUI(currentSelection);
           
+          // 사이드패널 모드에서는 자동으로 선택 텍스트 저장
           if (isSidePanel) {
             isSelectionStored = true;
             useSelectionButton.textContent = '✅ Selection Ready';
             useSelectionButton.classList.add('selection-stored');
           }
+        } else if (!response || !response.selectedText) {
+          // 선택된 텍스트가 없는 경우 초기화
+          resetSelection();
         }
       });
     });
@@ -272,22 +275,57 @@ document.addEventListener('DOMContentLoaded', function() {
     selectionHeaderIcon.classList.toggle('collapsed', !isSelectionContentVisible);
   });
 
-  // Send message to LLM with streaming
-  async function sendMessage(message) {
-    console.log('Sending message:', message);
-    
-    // 시스템 프롬프트와 사용자 메시지 분리
-    const systemPrompt = '<start_of_turn>system [Selected text]부분을 참고하여 주어진 [지시사항]에 한국어로 답변해주세요.<end_of_turn>';
-    const actualMessage = message.replace(systemPrompt, '').replace(/^\[선택된 텍스트\]\n/, '').replace(/\n\n\[지시사항\]\n/, ' - ');
-    
-    // 대화 기록에는 정제된 메시지 저장
-    conversationHistory.push({ role: 'user', content: actualMessage });
-    
-    // Trim conversation history if it's too long
-    if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
-      conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
-    }
-    
+    // Send message to LLM with streaming
+    async function sendMessage(message, currentSelection) {
+      console.log('Sending message:', message);
+
+      let messageToSend = [];
+      const hasSelection = currentSelection && currentSelection.trim().length > 0 && isSelectionStored;
+
+      // Update mode without clearing history
+      isSelectionMode = hasSelection;
+      
+      if (hasSelection) {
+        // Set up context for selection-based chat
+        const systemPrompt = '[Selected text]부분이 있다면 참고하여 주어진 [지시사항]에 답변해주세요. 필요하면 이전대화도 참고해주세요. 불필요하다고 생각되면 이전대화는 무시해도 됩니다.';
+        const userMsg = {
+          role: 'user',
+          content: `[Selected text]:\n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`
+        };
+        
+        // Include system prompt only if it's not already in history
+        if (!conversationHistory.some(msg => msg.role === 'system')) {
+          messageToSend.push({ role: 'system', content: systemPrompt });
+        }
+        
+        messageToSend = [
+          ...messageToSend,
+          ...conversationHistory,
+          userMsg
+        ];
+      } else {
+        // Normal chat mode - just add the message to existing conversation
+        messageToSend = [
+          ...conversationHistory,
+          { role: 'user', content: message }
+        ];
+      }
+
+      // Add message to conversation history
+      conversationHistory.push({ role: 'user', content: message });
+
+      // Trim conversation history if it's too long
+      if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+        conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+      }
+      
+      // Save conversation history
+      saveConversationHistory();
+
+      // 로그: 실제 발송 메시지와 대화 기록 저장 메시지
+      console.log('Message sent to LLM:', messageToSend);
+      console.log('Current conversation history:', conversationHistory);
+      
     try {
       const selectedModel = modelSelect.value;
       const isVllm = selectedModel === 'vllm';
@@ -299,12 +337,12 @@ document.addEventListener('DOMContentLoaded', function() {
       const requestBody = isVllm
         ? {
             model: MODEL_CONFIG.vllm.model,
-            messages: conversationHistory, // Send full conversation history
+            messages: messageToSend, // Send full conversation history
             ...MODEL_CONFIG.vllm.params
           }
         : {
             model: selectedModel,
-            messages: conversationHistory, // Send full conversation history
+            messages: messageToSend, // Send full conversation history
             ...MODEL_CONFIG.ollama.models[selectedModel].params
           };
 
@@ -471,9 +509,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </div>`;
 
         displayMessage = message + formattedDisplaySelection;
-        // LLM 전송용 메시지
-        messageToSend = '<start_of_turn>system [Selected text]부분을 참고하여 주어진 [지시사항]에 한국어로 답변해주세요.<end_of_turn>' + 
-                       `[Selected text]: \n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`;
       }
       
       // UI에 표시
@@ -482,7 +517,7 @@ document.addEventListener('DOMContentLoaded', function() {
       userInput.style.height = 'auto';
       
       try {
-        await sendMessage(messageToSend);
+        await sendMessage(message, currentSelection);
       } finally {
         isSendingMessage = false;
         userInput.disabled = false;
