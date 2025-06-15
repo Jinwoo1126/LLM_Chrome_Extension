@@ -53,27 +53,34 @@ document.addEventListener('DOMContentLoaded', function() {
   const MAX_HISTORY_TURNS = 3;
 
   // Initialize model selector
-  function initializeModelSelector() {
-    // Add vLLM option
-    const vllmOption = document.createElement('option');
-    vllmOption.value = 'vllm';
-    vllmOption.textContent = 'vLLM';
-    modelSelect.appendChild(vllmOption);
-
-    // Add Ollama options
-    Object.entries(MODEL_CONFIG.ollama.models).forEach(([key, model]) => {
-      const option = document.createElement('option');
-      option.value = key;
-      option.textContent = model.name;
-      modelSelect.appendChild(option);
-    });
-
-    // Load saved model preference
-    chrome.storage.local.get(['selectedModel'], function(result) {
-      if (result.selectedModel) {
-        modelSelect.value = result.selectedModel;
-      }
-    });
+  async function initializeModelSelector() {
+    // Get current configuration
+    const config = await apiConfig.getConfig();
+    console.log('Initializing with config:', config);
+    
+    // Clear existing options
+    modelSelect.innerHTML = '';
+    
+    if (config.apiType === 'vllm') {
+      // Add vLLM option
+      const vllmOption = document.createElement('option');
+      vllmOption.value = config.model;
+      vllmOption.textContent = 'vLLM (Gemma 3)';
+      modelSelect.appendChild(vllmOption);
+      modelSelect.value = config.model;
+    } else if (config.apiType === 'ollama') {
+      // Add Ollama options
+      const availableModels = apiConfig.getAvailableModels('ollama');
+      availableModels.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.id;
+        option.textContent = model.name;
+        modelSelect.appendChild(option);
+      });
+      
+      // Set current model
+      modelSelect.value = config.model;
+    }
 
     // Hide model selector but keep the container visible for clear button
     modelSelect.style.display = 'none';
@@ -140,13 +147,20 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Initialize model selector
-  initializeModelSelector();
-  addClearHistoryButton();
-  loadConversationHistory();
+  (async () => {
+    await initializeModelSelector();
+    addClearHistoryButton();
+    loadConversationHistory();
+  })();
 
   // Save model preference when changed
-  modelSelect.addEventListener('change', function() {
-    chrome.storage.local.set({ selectedModel: modelSelect.value });
+  modelSelect.addEventListener('change', async function() {
+    const config = await apiConfig.getConfig();
+    await apiConfig.saveConfig({ 
+      apiType: config.apiType,
+      model: modelSelect.value 
+    });
+    console.log('Model changed to:', modelSelect.value);
   });
 
   // Reset selection function
@@ -327,24 +341,27 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log('Current conversation history:', conversationHistory);
       
     try {
-      const selectedModel = modelSelect.value;
-      const isVllm = selectedModel === 'vllm';
+      // Get current configuration from config.js
+      const config = await apiConfig.getConfig();
+      console.log('Using config:', config);
       
-      const endpoint = isVllm 
-        ? MODEL_CONFIG.vllm.endpoint
-        : MODEL_CONFIG.ollama.endpoint;
+      const isVllm = config.apiType === 'vllm';
+      const endpoint = config.endpoint;
 
       const requestBody = isVllm
         ? {
-            model: MODEL_CONFIG.vllm.model,
-            messages: messageToSend, // Send full conversation history
-            ...MODEL_CONFIG.vllm.params
+            model: config.model,
+            messages: messageToSend,
+            ...config.params
           }
         : {
-            model: selectedModel,
-            messages: messageToSend, // Send full conversation history
-            ...MODEL_CONFIG.ollama.models[selectedModel].params
+            model: config.model,
+            messages: messageToSend,
+            ...config.params
           };
+
+      console.log('Request body:', requestBody);
+      console.log('Endpoint:', endpoint);
 
       const response = await fetch(endpoint, {
         method: 'POST',
