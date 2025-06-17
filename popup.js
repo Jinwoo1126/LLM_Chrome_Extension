@@ -50,37 +50,30 @@ document.addEventListener('DOMContentLoaded', function() {
   let conversationHistory = [];
   
   // Maximum number of turns to keep in history (to prevent context from getting too long)
-  const MAX_HISTORY_TURNS = 3;
+  const MAX_HISTORY_TURNS = 5;
 
   // Initialize model selector
-  async function initializeModelSelector() {
-    // Get current configuration
-    const config = await apiConfig.getConfig();
-    console.log('Initializing with config:', config);
-    
-    // Clear existing options
-    modelSelect.innerHTML = '';
-    
-    if (config.apiType === 'vllm') {
-      // Add vLLM option
-      const vllmOption = document.createElement('option');
-      vllmOption.value = config.model;
-      vllmOption.textContent = 'vLLM (Gemma 3)';
-      modelSelect.appendChild(vllmOption);
-      modelSelect.value = config.model;
-    } else if (config.apiType === 'ollama') {
-      // Add Ollama options
-      const availableModels = apiConfig.getAvailableModels('ollama');
-      availableModels.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.id;
-        option.textContent = model.name;
-        modelSelect.appendChild(option);
-      });
-      
-      // Set current model
-      modelSelect.value = config.model;
-    }
+  function initializeModelSelector() {
+    // Add vLLM option
+    const vllmOption = document.createElement('option');
+    vllmOption.value = 'vllm';
+    vllmOption.textContent = 'vLLM';
+    modelSelect.appendChild(vllmOption);
+
+    // Add Ollama options
+    Object.entries(MODEL_CONFIG.ollama.models).forEach(([key, model]) => {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = model.name;
+      modelSelect.appendChild(option);
+    });
+
+    // Load saved model preference
+    chrome.storage.local.get(['selectedModel'], function(result) {
+      if (result.selectedModel) {
+        modelSelect.value = result.selectedModel;
+      }
+    });
 
     // Hide model selector but keep the container visible for clear button
     modelSelect.style.display = 'none';
@@ -147,20 +140,13 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 
   // Initialize model selector
-  (async () => {
-    await initializeModelSelector();
-    addClearHistoryButton();
-    loadConversationHistory();
-  })();
+  initializeModelSelector();
+  addClearHistoryButton();
+  loadConversationHistory();
 
   // Save model preference when changed
-  modelSelect.addEventListener('change', async function() {
-    const config = await apiConfig.getConfig();
-    await apiConfig.saveConfig({ 
-      apiType: config.apiType,
-      model: modelSelect.value 
-    });
-    console.log('Model changed to:', modelSelect.value);
+  modelSelect.addEventListener('change', function() {
+    chrome.storage.local.set({ selectedModel: modelSelect.value });
   });
 
   // Reset selection function
@@ -307,8 +293,8 @@ document.addEventListener('DOMContentLoaded', function() {
           content: `[Selected text]:\n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`
         };
         
-        // Include system prompt only if it's not already in history
-        if (!conversationHistory.some(msg => msg.role === 'system')) {
+        // Include system prompt only if starting a new conversation
+        if (conversationHistory.length === 0) {
           messageToSend.push({ role: 'system', content: systemPrompt });
         }
         
@@ -317,20 +303,28 @@ document.addEventListener('DOMContentLoaded', function() {
           ...conversationHistory,
           userMsg
         ];
+
+        // Update conversation history with only the new message
+        conversationHistory.push(userMsg);
       } else {
-        // Normal chat mode - just add the message to existing conversation
+        // Normal chat mode
+        const userMsg = { role: 'user', content: message };
         messageToSend = [
           ...conversationHistory,
-          { role: 'user', content: message }
+          userMsg
         ];
-      }
 
-      // Add message to conversation history
-      conversationHistory.push({ role: 'user', content: message });
+        // Update conversation history with only the new message
+        conversationHistory.push(userMsg);
+      }
 
       // Trim conversation history if it's too long
       if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
-        conversationHistory = conversationHistory.slice(-MAX_HISTORY_TURNS * 2);
+        // Ensure we keep pairs of messages and maintain the alternating pattern
+        const startIdx = conversationHistory.length - (MAX_HISTORY_TURNS * 2);
+        // If starting with assistant message, shift by one to start with user
+        const adjustedStartIdx = conversationHistory[startIdx].role === 'assistant' ? startIdx + 1 : startIdx;
+        conversationHistory = conversationHistory.slice(adjustedStartIdx);
       }
       
       // Save conversation history
@@ -340,121 +334,116 @@ document.addEventListener('DOMContentLoaded', function() {
       console.log('Message sent to LLM:', messageToSend);
       console.log('Current conversation history:', conversationHistory);
       
-    try {
-      // Get current configuration from config.js
-      const config = await apiConfig.getConfig();
-      console.log('Using config:', config);
-      
-      const isVllm = config.apiType === 'vllm';
-      const endpoint = config.endpoint;
-
-      const requestBody = isVllm
-        ? {
-            model: config.model,
-            messages: messageToSend,
-            ...config.params
-          }
-        : {
-            model: config.model,
-            messages: messageToSend,
-            ...config.params
-          };
-
-      console.log('Request body:', requestBody);
-      console.log('Endpoint:', endpoint);
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      console.log('Response status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-
-      // Create a message element for streaming
-      const messageDiv = document.createElement('div');
-      messageDiv.className = 'message assistant-message';
-      chatMessages.appendChild(messageDiv);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        console.log('Received chunk:', chunk);
+      try {
+        const selectedModel = modelSelect.value;
+        const isVllm = selectedModel === 'vllm';
         
-        try {
-          // Handle OpenAI-compatible streaming format (vLLM)
-          if (isVllm) {
-            // Split by newlines as each line is a separate JSON object
-            const lines = chunk.split('\n');
-            for (const line of lines) {
-              if (line.trim()) { // Skip empty lines
-                if (line.startsWith('data: ')) {
-                  const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
-                  if (jsonStr === '[DONE]') continue;
-                  
-                  try {
-                    const parsed = JSON.parse(jsonStr);
-                    const content = parsed.choices?.[0]?.delta?.content || '';
-                    if (content) {
-                      assistantMessage += content;
-                      messageDiv.innerHTML = marked.parse(assistantMessage);
-                      messageDiv.querySelectorAll('pre code').forEach((block) => {
-                        hljs.highlightElement(block);
-                      });
-                      chatMessages.scrollTop = chatMessages.scrollHeight;
+        const endpoint = isVllm 
+          ? MODEL_CONFIG.vllm.endpoint
+          : MODEL_CONFIG.ollama.endpoint;
+
+        const requestBody = isVllm
+          ? {
+              model: MODEL_CONFIG.vllm.model,
+              messages: messageToSend,
+              ...MODEL_CONFIG.vllm.params
+            }
+          : {
+              model: selectedModel,
+              messages: messageToSend,
+              ...MODEL_CONFIG.ollama.models[selectedModel].params
+            };
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+
+        console.log('Response status:', response.status);
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let assistantMessage = '';
+
+        // Create a message element for streaming
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant-message';
+        chatMessages.appendChild(messageDiv);
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value);
+          console.log('Received chunk:', chunk);
+          
+          try {
+            // Handle OpenAI-compatible streaming format (vLLM)
+            if (isVllm) {
+              // Split by newlines as each line is a separate JSON object
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.trim()) { // Skip empty lines
+                  if (line.startsWith('data: ')) {
+                    const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
+                    if (jsonStr === '[DONE]') continue;
+                    
+                    try {
+                      const parsed = JSON.parse(jsonStr);
+                      const content = parsed.choices?.[0]?.delta?.content || '';
+                      if (content) {
+                        assistantMessage += content;
+                        messageDiv.innerHTML = marked.parse(assistantMessage);
+                        messageDiv.querySelectorAll('pre code').forEach((block) => {
+                          hljs.highlightElement(block);
+                        });
+                        chatMessages.scrollTop = chatMessages.scrollHeight;
+                      }
+                    } catch (e) {
+                      console.error('Error parsing vLLM chunk:', e, jsonStr);
                     }
-                  } catch (e) {
-                    console.error('Error parsing vLLM chunk:', e, jsonStr);
                   }
                 }
               }
+            } else {
+              // Handle Ollama format - single JSON object per chunk
+              const parsed = JSON.parse(chunk);
+              const content = parsed.message?.content || '';
+              if (content) {
+                assistantMessage += content;
+                messageDiv.innerHTML = marked.parse(assistantMessage);
+                messageDiv.querySelectorAll('pre code').forEach((block) => {
+                  hljs.highlightElement(block);
+                });
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+              }
             }
-          } else {
-            // Handle Ollama format - single JSON object per chunk
-            const parsed = JSON.parse(chunk);
-            const content = parsed.message?.content || '';
-            if (content) {
-              assistantMessage += content;
-              messageDiv.innerHTML = marked.parse(assistantMessage);
-              messageDiv.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-              });
-              chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
+          } catch (e) {
+            console.error('Error parsing streaming response:', e, chunk);
           }
-        } catch (e) {
-          console.error('Error parsing streaming response:', e, chunk);
         }
-      }
 
-      // Add assistant message to conversation history
-      conversationHistory.push({ role: 'assistant', content: assistantMessage });
-      saveConversationHistory();
-      
-      return assistantMessage;
-    } catch (error) {
-      console.error('Error:', error);
-      const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
-      
-      // Still add error message to history for context
-      conversationHistory.push({ role: 'assistant', content: errorMessage });
-      saveConversationHistory();
-      
-      return errorMessage;
+        // Add assistant message to conversation history after full response is received
+        const assistantMsg = { role: 'assistant', content: assistantMessage };
+        conversationHistory.push(assistantMsg);
+        saveConversationHistory();
+        
+        return assistantMessage;
+      } catch (error) {
+        console.error('Error:', error);
+        const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
+        
+        // Do not add error messages to conversation history to maintain the alternating pattern
+        return errorMessage;
+      }
     }
-  }
 
   // Add message to chat UI only
   function addMessageToUI(message, isUser = false) {
