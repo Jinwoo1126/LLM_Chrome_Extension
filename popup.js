@@ -165,6 +165,12 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Notify background script to clear selection
     chrome.runtime.sendMessage({ action: 'clearSelection' });
+    
+    // For side panel mode, don't reset the context action flag
+    // This ensures continued monitoring even after reset
+    if (isSidePanel) {
+      console.log('Side panel mode: maintaining selection monitoring after reset');
+    }
   }
 
   // Handle reset button click
@@ -275,175 +281,198 @@ document.addEventListener('DOMContentLoaded', function() {
     selectionHeaderIcon.classList.toggle('collapsed', !isSelectionContentVisible);
   });
 
-    // Send message to LLM with streaming
-    async function sendMessage(message, currentSelection) {
-      console.log('Sending message:', message);
-
-      let messageToSend = [];
-      const hasSelection = currentSelection && currentSelection.trim().length > 0 && isSelectionStored;
-
-      // Update mode without clearing history
-      isSelectionMode = hasSelection;
-      
-      if (hasSelection) {
-        // Set up context for selection-based chat
-        const systemPrompt = '[Selected text]부분이 있다면 참고하여 주어진 [지시사항]에 답변해주세요. 필요하면 이전대화도 참고해주세요. 불필요하다고 생각되면 이전대화는 무시해도 됩니다.';
-        const userMsg = {
-          role: 'user',
-          content: `[Selected text]:\n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`
-        };
-        
-        // Include system prompt only if starting a new conversation
-        if (conversationHistory.length === 0) {
-          messageToSend.push({ role: 'system', content: systemPrompt });
-        }
-        
-        messageToSend = [
-          ...messageToSend,
-          ...conversationHistory,
-          userMsg
-        ];
-
-        // Update conversation history with only the new message
-        conversationHistory.push(userMsg);
-      } else {
-        // Normal chat mode
-        const userMsg = { role: 'user', content: message };
-        messageToSend = [
-          ...conversationHistory,
-          userMsg
-        ];
-
-        // Update conversation history with only the new message
-        conversationHistory.push(userMsg);
+  // Add throttle function
+  function throttle(func, limit) {
+    let inThrottle;
+    return function(...args) {
+      if (!inThrottle) {
+        func.apply(this, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
       }
+    };
+  }
 
-      // Trim conversation history if it's too long
-      if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
-        // Ensure we keep pairs of messages and maintain the alternating pattern
-        const startIdx = conversationHistory.length - (MAX_HISTORY_TURNS * 2);
-        // If starting with assistant message, shift by one to start with user
-        const adjustedStartIdx = conversationHistory[startIdx].role === 'assistant' ? startIdx + 1 : startIdx;
-        conversationHistory = conversationHistory.slice(adjustedStartIdx);
+  // Add debounce function
+  function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+  }
+
+  // Send message to LLM with streaming
+  async function sendMessage(message, currentSelection) {
+    console.log('Sending message:', message);
+
+    let messageToSend = [];
+    const hasSelection = currentSelection && currentSelection.trim().length > 0 && isSelectionStored;
+
+    // Update mode without clearing history
+    isSelectionMode = hasSelection;
+    
+    // Store original user message for conversation history
+    const originalUserMsg = { role: 'user', content: message };
+    
+    if (hasSelection) {
+      // Set up context for selection-based chat
+      const systemPrompt = '[Selected text]부분이 있다면 참고하여 주어진 [지시사항]에 답변해주세요. 필요하면 이전대화도 참고해주세요. 불필요하다고 생각되면 이전대화는 무시해도 됩니다.';
+      const userMsgForLLM = {
+        role: 'user',
+        content: `[Selected text]:\n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`
+      };
+      
+      // Include system prompt only if starting a new conversation
+      if (conversationHistory.length === 0) {
+        messageToSend.push({ role: 'system', content: systemPrompt });
       }
       
-      // Save conversation history
-      saveConversationHistory();
+      messageToSend = [
+        ...messageToSend,
+        ...conversationHistory,
+        userMsgForLLM
+      ];
 
-      // 로그: 실제 발송 메시지와 대화 기록 저장 메시지
-      console.log('Message sent to LLM:', messageToSend);
-      console.log('Current conversation history:', conversationHistory);
+      // Update conversation history with original user message only
+      conversationHistory.push(originalUserMsg);
+    } else {
+      // Normal chat mode
+      messageToSend = [
+        ...conversationHistory,
+        originalUserMsg
+      ];
+
+      // Update conversation history with original user message
+      conversationHistory.push(originalUserMsg);
+    }
+
+    // Trim conversation history if it's too long
+    if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
+      // Ensure we keep pairs of messages and maintain the alternating pattern
+      const startIdx = conversationHistory.length - (MAX_HISTORY_TURNS * 2);
+      // If starting with assistant message, shift by one to start with user
+      const adjustedStartIdx = conversationHistory[startIdx].role === 'assistant' ? startIdx + 1 : startIdx;
+      conversationHistory = conversationHistory.slice(adjustedStartIdx);
+    }
+    
+    // Save conversation history
+    saveConversationHistory();
+
+    // 로그: 실제 발송 메시지와 대화 기록 저장 메시지
+    console.log('Message sent to LLM:', messageToSend);
+    console.log('Current conversation history:', conversationHistory);
+    
+    try {
+      const selectedModel = modelSelect.value;
+      const isVllm = selectedModel === 'vllm';
       
-      try {
-        const selectedModel = modelSelect.value;
-        const isVllm = selectedModel === 'vllm';
+      const endpoint = isVllm 
+        ? MODEL_CONFIG.vllm.endpoint
+        : MODEL_CONFIG.ollama.endpoint;
+
+      const requestBody = isVllm
+        ? {
+            model: MODEL_CONFIG.vllm.model,
+            messages: messageToSend,
+            ...MODEL_CONFIG.vllm.params
+          }
+        : {
+            model: selectedModel,
+            messages: messageToSend,
+            ...MODEL_CONFIG.ollama.models[selectedModel].params
+          };
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      console.log('Response status:', response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let assistantMessage = '';
+
+      // Create a message element for streaming
+      const messageDiv = document.createElement('div');
+      messageDiv.className = 'message assistant-message';
+      chatMessages.appendChild(messageDiv);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        console.log('Received chunk:', chunk);
         
-        const endpoint = isVllm 
-          ? MODEL_CONFIG.vllm.endpoint
-          : MODEL_CONFIG.ollama.endpoint;
-
-        const requestBody = isVllm
-          ? {
-              model: MODEL_CONFIG.vllm.model,
-              messages: messageToSend,
-              ...MODEL_CONFIG.vllm.params
-            }
-          : {
-              model: selectedModel,
-              messages: messageToSend,
-              ...MODEL_CONFIG.ollama.models[selectedModel].params
-            };
-
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(requestBody)
-        });
-
-        console.log('Response status:', response.status);
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let assistantMessage = '';
-
-        // Create a message element for streaming
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message assistant-message';
-        chatMessages.appendChild(messageDiv);
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value);
-          console.log('Received chunk:', chunk);
-          
-          try {
-            // Handle OpenAI-compatible streaming format (vLLM)
-            if (isVllm) {
-              // Split by newlines as each line is a separate JSON object
-              const lines = chunk.split('\n');
-              for (const line of lines) {
-                if (line.trim()) { // Skip empty lines
-                  if (line.startsWith('data: ')) {
-                    const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
-                    if (jsonStr === '[DONE]') continue;
-                    
-                    try {
-                      const parsed = JSON.parse(jsonStr);
-                      const content = parsed.choices?.[0]?.delta?.content || '';
-                      if (content) {
-                        assistantMessage += content;
-                        messageDiv.innerHTML = marked.parse(assistantMessage);
-                        messageDiv.querySelectorAll('pre code').forEach((block) => {
-                          hljs.highlightElement(block);
-                        });
-                        chatMessages.scrollTop = chatMessages.scrollHeight;
-                      }
-                    } catch (e) {
-                      console.error('Error parsing vLLM chunk:', e, jsonStr);
+        try {
+          // Handle OpenAI-compatible streaming format (vLLM)
+          if (isVllm) {
+            // Split by newlines as each line is a separate JSON object
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.trim()) { // Skip empty lines
+                if (line.startsWith('data: ')) {
+                  const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
+                  if (jsonStr === '[DONE]') continue;
+                  
+                  try {
+                    const parsed = JSON.parse(jsonStr);
+                    const content = parsed.choices?.[0]?.delta?.content || '';
+                    if (content) {
+                      assistantMessage += content;
+                      messageDiv.innerHTML = marked.parse(assistantMessage);
+                      messageDiv.querySelectorAll('pre code').forEach((block) => {
+                        hljs.highlightElement(block);
+                      });
+                      chatMessages.scrollTop = chatMessages.scrollHeight;
                     }
+                  } catch (e) {
+                    console.error('Error parsing vLLM chunk:', e, jsonStr);
                   }
                 }
               }
-            } else {
-              // Handle Ollama format - single JSON object per chunk
-              const parsed = JSON.parse(chunk);
-              const content = parsed.message?.content || '';
-              if (content) {
-                assistantMessage += content;
-                messageDiv.innerHTML = marked.parse(assistantMessage);
-                messageDiv.querySelectorAll('pre code').forEach((block) => {
-                  hljs.highlightElement(block);
-                });
-                chatMessages.scrollTop = chatMessages.scrollHeight;
-              }
             }
-          } catch (e) {
-            console.error('Error parsing streaming response:', e, chunk);
+          } else {
+            // Handle Ollama format - single JSON object per chunk
+            const parsed = JSON.parse(chunk);
+            const content = parsed.message?.content || '';
+            if (content) {
+              assistantMessage += content;
+              messageDiv.innerHTML = marked.parse(assistantMessage);
+              messageDiv.querySelectorAll('pre code').forEach((block) => {
+                hljs.highlightElement(block);
+              });
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
           }
+        } catch (e) {
+          console.error('Error parsing streaming response:', e, chunk);
         }
-
-        // Add assistant message to conversation history after full response is received
-        const assistantMsg = { role: 'assistant', content: assistantMessage };
-        conversationHistory.push(assistantMsg);
-        saveConversationHistory();
-        
-        return assistantMessage;
-      } catch (error) {
-        console.error('Error:', error);
-        const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
-        
-        // Do not add error messages to conversation history to maintain the alternating pattern
-        return errorMessage;
       }
+
+      // Add assistant message to conversation history after full response is received
+      const assistantMsg = { role: 'assistant', content: assistantMessage };
+      conversationHistory.push(assistantMsg);
+      saveConversationHistory();
+      
+      return assistantMessage;
+    } catch (error) {
+      console.error('Error:', error);
+      const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
+      
+      // Do not add error messages to conversation history to maintain the alternating pattern
+      return errorMessage;
     }
+  }
 
   // Add message to chat UI only
   function addMessageToUI(message, isUser = false) {
@@ -552,33 +581,70 @@ document.addEventListener('DOMContentLoaded', function() {
   // Check for selection when popup opens
   checkForSelection();
   
-  // Check for selection changes more frequently
-  // This adds real-time monitoring for selections while popup is open
+  // Optimize selection monitoring
   function setupSelectionMonitoring() {
-    // Check for selection immediately when popup opens
-    checkForSelection();
-    
-    // Poll for selection changes every second while popup is open
-    const selectionInterval = setInterval(() => {
-      checkForSelection();
-    }, 1000);
-    
-    // Listen for tab changes
-    chrome.tabs.onActivated.addListener(() => {
-      resetSelection();
-      // 탭 전환 후 새로운 선택을 확인하기 위한 시간을 충분히 줌
-      setTimeout(() => {
-        hasHandledInitialAction = false;  // 새 탭에서의 선택을 감지하기 위해 플래그 초기화
-        checkForSelection();
-      }, 300); // 시간을 300ms로 증가
+    let isWindowFocused = true;
+    let hasInitialContextAction = false;
+
+    // Check for context action on initialization
+    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
+      if (response && response.action && response.selection) {
+        hasInitialContextAction = true;
+        console.log('Initial context action detected:', response.action);
+      }
     });
 
-    // Clean up interval when popup closes
+    // Handle window focus changes
+    window.addEventListener('focus', () => {
+      isWindowFocused = true;
+      checkForSelection();
+    });
+
+    window.addEventListener('blur', () => {
+      isWindowFocused = false;
+    });
+
+    // Throttled selection check
+    const throttledCheck = throttle(checkForSelection, 1000);
+
+    // Selection change event listener
+    document.addEventListener('selectionchange', () => {
+      // For side panel mode, always allow monitoring regardless of focus
+      // For popup mode, allow only when focused OR has context action
+      if (isSidePanel || isWindowFocused || hasInitialContextAction) {
+        throttledCheck();
+      }
+    });
+
+    // Reduced interval for background checks
+    const selectionInterval = setInterval(() => {
+      // For side panel mode, always check for context actions regardless of focus
+      // For popup mode, check only when focused OR has context action
+      if (isSidePanel || isWindowFocused || hasInitialContextAction) {
+        checkForSelection();
+        
+        // For popup mode only: reset context action flag after some time to prevent indefinite monitoring
+        // But don't reset if we're in side panel mode
+        if (hasInitialContextAction && !isSidePanel) {
+          // Check if context action is still valid
+          chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
+            if (!response || !response.action) {
+              setTimeout(() => {
+                hasInitialContextAction = false;
+                console.log('Context action flag reset for popup mode');
+              }, 5000); // Reset after 5 seconds if no more context actions
+            }
+          });
+        }
+      }
+    }, 2000); // Check every 2 seconds for better responsiveness
+
+    // Clean up when popup closes
     window.addEventListener('unload', () => {
       clearInterval(selectionInterval);
     });
   }
-  
+
   // Initialize selection monitoring
   setupSelectionMonitoring();
 
