@@ -297,6 +297,15 @@ body {
   border-color: #BFDBFE;
 }
 
+/* Timestamp styles */
+.message-timestamp {
+  color: #999;
+  font-size: 11px;
+  margin-top: 2px;
+  text-align: right;
+  font-family: inherit;
+}
+
 /* Markdown styles */
 .assistant-message p {
   margin: 0.5em 0;

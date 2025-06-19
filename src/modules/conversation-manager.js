@@ -102,6 +102,22 @@ export class ConversationManager {
     try {
       const result = await ChromeUtils.getStorage([APP_CONSTANTS.STORAGE_KEYS.CONVERSATION_HISTORY]);
       this.conversationHistory = result[APP_CONSTANTS.STORAGE_KEYS.CONVERSATION_HISTORY] || [];
+      // 마이그레이션: content 내에 [Selected text context]:가 어디에 있든 분리
+      this.conversationHistory = this.conversationHistory.map(msg => {
+        if (msg.content && typeof msg.content === 'string') {
+          const idx = msg.content.indexOf('[Selected text context]:');
+          if (idx !== -1) {
+            const content = msg.content.slice(0, idx).trim();
+            const selectionRaw = msg.content.slice(idx + '[Selected text context]:'.length).trim();
+            return {
+              ...msg,
+              content,
+              selection: selectionRaw || msg.selection || ''
+            };
+          }
+        }
+        return msg;
+      });
     } catch (error) {
       Utils.logError('ConversationManager.loadConversationHistory', error);
       this.conversationHistory = [];
