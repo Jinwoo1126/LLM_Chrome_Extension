@@ -64,10 +64,17 @@ export class ConversationManager {
    * @returns {Array} - Formatted messages for API
    */
   getFormattedHistory() {
-    return this.conversationHistory.map(msg => ({
-      role: msg.isUser ? 'user' : 'assistant',
-      content: msg.content
-    }));
+    return this.conversationHistory.map(msg => {
+      let content = msg.content || '';
+      if (msg.selection && msg.selection.trim()) {
+        // selection이 있으면 프롬프트에 합쳐서 전달
+        content = `${content}\n\n[Selected text context]:\n${msg.selection.trim()}`.trim();
+      }
+      return {
+        role: msg.isUser ? 'user' : 'assistant',
+        content
+      };
+    });
   }
 
   /**
