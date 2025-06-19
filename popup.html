@@ -49,15 +49,6 @@
   <script src="config.js"></script>
   <script src="marked.min.js"></script>
   <script src="highlight.min.js"></script>
-  <script>
-    // Verify that required libraries are loaded
-    if (typeof marked === 'undefined') {
-      console.error('marked library not loaded');
-    }
-    if (typeof hljs === 'undefined') {
-      console.error('highlight.js library not loaded');
-    }
-  </script>
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>
