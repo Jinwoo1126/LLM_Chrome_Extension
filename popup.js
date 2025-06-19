@@ -18,6 +18,47 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.error('Failed to initialize LLM Chat Extension:', error);
     alert('Failed to load the extension. Please refresh the page.');
   }
+
+  // 탭 버튼 및 패널
+  const tabChat = document.getElementById('tab-chat');
+  const tabSettings = document.getElementById('tab-settings');
+  const chatMessages = document.getElementById('chat-messages');
+  const settingsPanel = document.getElementById('settings-panel');
+
+  if (tabChat && tabSettings && chatMessages && settingsPanel) {
+    tabChat.addEventListener('click', () => {
+      tabChat.classList.add('active');
+      tabSettings.classList.remove('active');
+      chatMessages.style.display = '';
+      settingsPanel.classList.add('hidden');
+    });
+    tabSettings.addEventListener('click', () => {
+      tabSettings.classList.add('active');
+      tabChat.classList.remove('active');
+      chatMessages.style.display = 'none';
+      settingsPanel.classList.remove('hidden');
+    });
+    // 설정 저장
+    const saveBtn = document.getElementById('save-settings');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const apiType = document.getElementById('api-type-select').value;
+        const lang = document.getElementById('lang-select').value;
+        chrome.storage.local.set({ apiType, lang }, () => {
+          alert('설정이 저장되었습니다.');
+        });
+      });
+    }
+    // 설정값 불러오기
+    function loadSettings() {
+      chrome.storage.local.get(['apiType', 'lang'], (result) => {
+        if (result.apiType) document.getElementById('api-type-select').value = result.apiType;
+        if (result.lang) document.getElementById('lang-select').value = result.lang;
+      });
+    }
+    // 설정 탭 진입 시 불러오기
+    tabSettings.addEventListener('click', loadSettings);
+  }
 });
 
 // Add message to chat

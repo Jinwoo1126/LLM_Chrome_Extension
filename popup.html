@@ -22,7 +22,28 @@
       </div>
     </div>
     <div class="chat-container">
+      <div class="chat-tabs">
+        <button id="tab-chat" class="tab-button active">Chat</button>
+        <button id="tab-settings" class="tab-button">설정</button>
+      </div>
       <div id="chat-messages" class="chat-messages"></div>
+      <div id="settings-panel" class="settings-panel hidden">
+        <div class="settings-group">
+          <label for="api-type-select">API 종류</label>
+          <select id="api-type-select">
+            <option value="ollama">Ollama</option>
+            <option value="vllm">vLLM</option>
+          </select>
+        </div>
+        <div class="settings-group">
+          <label for="lang-select">언어</label>
+          <select id="lang-select">
+            <option value="ko">한국어</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+        <button id="save-settings" class="save-settings-button">저장</button>
+      </div>
       <div id="selection-info" class="selection-info hidden">
         <div class="selection-header">
           <svg class="selection-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -33,7 +54,6 @@
         <div class="selection-content">
           <div class="selection-text" id="selection-preview"></div>
           <div class="selection-buttons">
-            <button id="use-selection" title="선택한 텍스트만 사용">📋 Use Selection</button>
             <button id="summarize-selection" title="선택한 텍스트 요약">📝 Summarize</button>
             <button id="translate-selection" title="한국어로 번역">🌐 Translate</button>
             <button id="reset-selection" title="선택 초기화">🔄 Reset</button>

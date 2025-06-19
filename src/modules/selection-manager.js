@@ -32,30 +32,33 @@ export class SelectionManager {
    * Setup event listeners
    */
   setupEventListeners() {
-    // Use selection button
-    DOMUtils.addEventListener(this.elements.useSelectionButton, 'click', () => {
-      this.handleUseSelection();
-    });
-
     // Reset selection button
-    DOMUtils.addEventListener(this.elements.resetSelectionButton, 'click', () => {
-      this.resetSelection();
-    });
+    if (this.elements.resetSelectionButton) {
+      this.elements.resetSelectionButton.addEventListener('click', () => {
+        this.resetSelection();
+      });
+    }
 
     // Summarize button
-    DOMUtils.addEventListener(this.elements.summarizeButton, 'click', () => {
-      this.handleSummarize();
-    });
+    if (this.elements.summarizeButton) {
+      this.elements.summarizeButton.addEventListener('click', () => {
+        this.handleSummarize();
+      });
+    }
 
     // Translate button
-    DOMUtils.addEventListener(this.elements.translateButton, 'click', () => {
-      this.handleTranslate();
-    });
+    if (this.elements.translateButton) {
+      this.elements.translateButton.addEventListener('click', () => {
+        this.handleTranslate();
+      });
+    }
 
     // Selection header toggle
-    DOMUtils.addEventListener(this.elements.selectionHeader, 'click', () => {
-      this.toggleSelectionContent();
-    });
+    if (this.elements.selectionHeader) {
+      this.elements.selectionHeader.addEventListener('click', () => {
+        this.toggleSelectionContent();
+      });
+    }
 
     // Setup periodic selection monitoring
     this.setupSelectionMonitoring();
@@ -153,12 +156,16 @@ export class SelectionManager {
 
     if (trimmedText) {
       this.updateSelectionUI(trimmedText);
-      DOMUtils.showElement(this.elements.selectionInfo);
+      if (this.elements.selectionInfo) {
+        this.elements.selectionInfo.classList.remove('hidden');
+      }
     } else {
-      DOMUtils.hideElement(this.elements.selectionInfo);
+      if (this.elements.selectionInfo) {
+        this.elements.selectionInfo.classList.add('hidden');
+      }
       this.isSelectionStored = false;
       this.isSelectionMode = false;
-      DOMUtils.removeClass(this.elements.useSelectionButton, APP_CONSTANTS.CSS_CLASSES.SELECTION_STORED);
+      // Use Selection 관련 클래스/상태 제거
     }
   }
 
@@ -178,31 +185,6 @@ export class SelectionManager {
     } else {
       this.elements.selectionPreview.removeAttribute('title');
     }
-  }
-
-  /**
-   * Handle use selection button click
-   */
-  handleUseSelection() {
-    if (!this.currentSelection.trim()) {
-      alert(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_NO_SELECTION);
-      return;
-    }
-
-    this.isSelectionStored = true;
-    this.isSelectionMode = true;
-    DOMUtils.addClass(this.elements.useSelectionButton, APP_CONSTANTS.CSS_CLASSES.SELECTION_STORED);
-
-    // Focus on input
-    if (this.elements.userInput) {
-      this.elements.userInput.focus();
-    }
-
-    // Dispatch custom event
-    this.dispatchSelectionEvent('selectionStored', {
-      selection: this.currentSelection,
-      isStored: true
-    });
   }
 
   /**

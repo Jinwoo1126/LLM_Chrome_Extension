@@ -114,7 +114,7 @@ export class LLMChatApp {
    */
   async handleSendMessage(event) {
     const { message } = event.detail;
-    
+
     if (this.isSendingMessage || !message.trim()) {
       return;
     }
@@ -123,13 +123,10 @@ export class LLMChatApp {
       this.isSendingMessage = true;
       this.uiManager.setSendButtonState(false);
 
-      // Get current selection context
-      const currentSelection = this.selectionManager.getCurrentSelection();
-      const isSelectionMode = this.selectionManager.isInSelectionMode();
-
-      // Prepare final message
+      // 선택된 텍스트가 있으면 항상 프롬프트에 포함
+      const currentSelection = this.selectionManager.getCurrentSelection && this.selectionManager.getCurrentSelection();
       let finalMessage = message;
-      if (isSelectionMode && currentSelection) {
+      if (currentSelection) {
         finalMessage = `${message}\n\n[Selected text context]:\n${currentSelection}`;
       }
 
@@ -142,12 +139,13 @@ export class LLMChatApp {
       await this.sendToLLM(finalMessage);
 
     } catch (error) {
-      Utils.logError('LLMChatApp.handleSendMessage', error);
-      this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      // ...existing error handling...
+      Utils.logError && Utils.logError('LLMChatApp.handleSendMessage', error);
+      this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
     } finally {
       this.isSendingMessage = false;
       this.uiManager.setSendButtonState(true);
-      this.uiManager.focusInput();
+      this.uiManager.focusInput && this.uiManager.focusInput();
     }
   }
 
