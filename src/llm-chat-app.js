@@ -123,20 +123,16 @@ export class LLMChatApp {
       this.isSendingMessage = true;
       this.uiManager.setSendButtonState(false);
 
-      // 선택된 텍스트가 있으면 항상 프롬프트에 포함
+      // 선택된 텍스트가 있으면 별도로 처리
       const currentSelection = this.selectionManager.getCurrentSelection && this.selectionManager.getCurrentSelection();
-      let finalMessage = message;
-      if (currentSelection) {
-        finalMessage = `${message}\n\n[Selected text context]:\n${currentSelection}`;
-      }
-
-      // Add user message to conversation and UI
-      this.conversationManager.addMessage(finalMessage, true, currentSelection);
+      
+      // Add user message to conversation and UI (without system prompt)
+      this.conversationManager.addMessage(message, true, currentSelection);
       this.uiManager.addMessage(message, true, currentSelection);
       this.uiManager.clearInput();
 
-      // Send to LLM
-      await this.sendToLLM(finalMessage);
+      // Send to LLM (system prompt will be added by LLM manager)
+      await this.sendToLLM(message, currentSelection);
 
     } catch (error) {
       // ...existing error handling...
@@ -152,7 +148,7 @@ export class LLMChatApp {
   /**
    * Send message to LLM
    */
-  async sendToLLM(message) {
+  async sendToLLM(message, selection = '') {
     const loadingElement = this.uiManager.showLoading();
     let assistantMessage = '';
     let messageElement = null;
@@ -160,8 +156,14 @@ export class LLMChatApp {
     try {
       const conversationHistory = this.conversationManager.getFormattedHistory();
 
+      // 선택된 텍스트가 있으면 메시지에 포함
+      let messageToSend = message;
+      if (selection && selection.trim()) {
+        messageToSend = `${message}\n\n[Selected text context]:\n${selection}`;
+      }
+
       await this.llmManager.sendMessage(
-        message,
+        messageToSend,
         conversationHistory.slice(0, -1), // Exclude the current message
         
         // onChunk callback
@@ -267,9 +269,12 @@ export class LLMChatApp {
     const { action, prompt, selection } = event.detail;
     
     try {
-      // Add the action message
+      // Add the action message to conversation (with full prompt for LLM)
       this.conversationManager.addMessage(prompt, true, selection);
-      this.uiManager.addMessage(`${action === 'summarize' ? '요약' : '번역'} 요청`, true, selection);
+      
+      // UI에는 간단한 메시지만 표시
+      const actionText = action === 'summarize' ? '📝 요약 요청' : '🌐 번역 요청';
+      this.uiManager.addMessage(actionText, true, selection);
       
       // Send to LLM
       await this.sendToLLM(prompt);

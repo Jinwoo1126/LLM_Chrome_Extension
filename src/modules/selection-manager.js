@@ -1,5 +1,5 @@
 // Selection management module
-import { APP_CONSTANTS } from '../constants/app-constants.js';
+import { APP_CONSTANTS, getLocalizedMessage } from '../constants/app-constants.js';
 import { ChromeUtils } from '../utils/chrome-utils.js';
 import { DOMUtils } from '../utils/dom-utils.js';
 import { Utils } from '../utils/general-utils.js';
@@ -10,6 +10,7 @@ export class SelectionManager {
     this.isSelectionStored = false;
     this.isSelectionMode = false;
     this.elements = {};
+    this.currentLanguage = 'ko';
     
     // Throttled and debounced functions
     this.debouncedCheckSelection = Utils.debounce(
@@ -20,12 +21,23 @@ export class SelectionManager {
 
   /**
    * Initialize selection manager
-   * @param {Object} elements - DOM elements object
    */
-  initialize(elements) {
+  async initialize(elements) {
     this.elements = elements;
+    this.currentLanguage = await this.getCurrentLanguage();
     this.setupEventListeners();
-    this.checkForContextAction();
+    this.setupSelectionMonitoring();
+  }
+
+  /**
+   * Get current language setting
+   */
+  async getCurrentLanguage() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['lang'], (result) => {
+        resolve(result.lang || 'ko');
+      });
+    });
   }
 
   /**
@@ -192,11 +204,12 @@ export class SelectionManager {
    */
   async handleSummarize() {
     if (!this.currentSelection.trim()) {
-      alert(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_NO_SELECTION);
+      const errorMessage = getLocalizedMessage('ERROR_NO_SELECTION', this.currentLanguage);
+      alert(errorMessage);
       return;
     }
 
-    const prompt = APP_CONSTANTS.DEFAULT_MESSAGES.SUMMARIZATION_PROMPT + this.currentSelection;
+    const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', this.currentLanguage) + this.currentSelection;
     
     this.dispatchSelectionEvent('actionRequested', {
       action: 'summarize',
@@ -210,11 +223,12 @@ export class SelectionManager {
    */
   async handleTranslate() {
     if (!this.currentSelection.trim()) {
-      alert(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_NO_SELECTION);
+      const errorMessage = getLocalizedMessage('ERROR_NO_SELECTION', this.currentLanguage);
+      alert(errorMessage);
       return;
     }
 
-    const prompt = APP_CONSTANTS.DEFAULT_MESSAGES.TRANSLATION_PROMPT + this.currentSelection;
+    const prompt = getLocalizedMessage('TRANSLATION_PROMPT', this.currentLanguage) + this.currentSelection;
     
     this.dispatchSelectionEvent('actionRequested', {
       action: 'translate',

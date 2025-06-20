@@ -26,7 +26,33 @@
         <button id="tab-chat" class="tab-button active">Chat</button>
         <button id="tab-settings" class="tab-button">설정</button>
       </div>
-      <div id="chat-messages" class="chat-messages"></div>
+      
+      <!-- Chat Tab Content -->
+      <div id="chat-content" class="chat-content">
+        <div id="chat-messages" class="chat-messages"></div>
+        <div id="selection-info" class="selection-info hidden">
+          <div class="selection-header">
+            <svg class="selection-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+            <span>Selected text</span>
+          </div>
+          <div class="selection-content">
+            <div class="selection-text" id="selection-preview"></div>
+            <div class="selection-buttons">
+              <button id="summarize-selection" title="선택한 텍스트 요약">📝 Summarize</button>
+              <button id="translate-selection" title="한국어로 번역">🌐 Translate</button>
+              <button id="reset-selection" title="선택 초기화">🔄 Reset</button>
+            </div>
+          </div>
+        </div>
+        <div class="input-container">
+          <textarea id="user-input" placeholder="Type your message here..." rows="1"></textarea>
+          <button id="send-button">Send</button>
+        </div>
+      </div>
+      
+      <!-- Settings Tab Content -->
       <div id="settings-panel" class="settings-panel hidden">
         <div class="settings-group">
           <label for="api-type-select">API 종류</label>
@@ -44,59 +70,11 @@
         </div>
         <button id="save-settings" class="save-settings-button">저장</button>
       </div>
-      <div class="input-container">
-        <textarea id="user-input" placeholder="Type your message here..." rows="1"></textarea>
-        <button id="send-button">Send</button>
-      </div>
     </div>
   </div>
-  <script src="config.js"></script>
+  <script type="module" src="config.js"></script>
   <script src="marked.min.js"></script>
   <script src="highlight.min.js"></script>
   <script type="module" src="popup.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', async function() {
-      // 탭 버튼 및 패널
-      const tabChat = document.getElementById('tab-chat');
-      const tabSettings = document.getElementById('tab-settings');
-      const chatMessages = document.getElementById('chat-messages');
-      const settingsPanel = document.getElementById('settings-panel');
-
-      if (tabChat && tabSettings && chatMessages && settingsPanel) {
-        tabChat.addEventListener('click', () => {
-          tabChat.classList.add('active');
-          tabSettings.classList.remove('active');
-          chatMessages.style.display = '';
-          settingsPanel.classList.add('hidden');
-        });
-        tabSettings.addEventListener('click', () => {
-          tabSettings.classList.add('active');
-          tabChat.classList.remove('active');
-          chatMessages.style.display = 'none';
-          settingsPanel.classList.remove('hidden');
-        });
-        // 설정 저장
-        const saveBtn = document.getElementById('save-settings');
-        if (saveBtn) {
-          saveBtn.addEventListener('click', () => {
-            const apiType = document.getElementById('api-type-select').value;
-            const lang = document.getElementById('lang-select').value;
-            chrome.storage.local.set({ apiType, lang }, () => {
-              alert('설정이 저장되었습니다.');
-            });
-          });
-        }
-        // 설정값 불러오기
-        function loadSettings() {
-          chrome.storage.local.get(['apiType', 'lang'], (result) => {
-            if (result.apiType) document.getElementById('api-type-select').value = result.apiType;
-            if (result.lang) document.getElementById('lang-select').value = result.lang;
-          });
-        }
-        // 설정 탭 진입 시 불러오기
-        tabSettings.addEventListener('click', loadSettings);
-      }
-    });
-  </script>
 </body>
 </html>

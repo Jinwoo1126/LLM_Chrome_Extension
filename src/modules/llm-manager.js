@@ -1,11 +1,14 @@
 // LLM API management module
 import { APP_CONSTANTS } from '../constants/app-constants.js';
 import { Utils } from '../utils/general-utils.js';
+import { apiConfig } from '../../config.js';
+import { getSystemPrompt } from '../constants/app-constants.js';
 
 export class LLMManager {
   constructor() {
     this.currentConfig = null;
     this.isInitialized = false;
+    this.currentLanguage = 'ko'; // Default language
   }
 
   /**
@@ -14,11 +17,23 @@ export class LLMManager {
   async initialize() {
     try {
       this.currentConfig = await apiConfig.getConfig();
+      this.currentLanguage = await this.getCurrentLanguage();
       this.isInitialized = true;
     } catch (error) {
       Utils.logError('LLMManager.initialize', error);
       throw new Error('Failed to initialize LLM manager');
     }
+  }
+
+  /**
+   * Get current language setting
+   */
+  async getCurrentLanguage() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['lang'], (result) => {
+        resolve(result.lang || 'ko');
+      });
+    });
   }
 
   /**
@@ -34,20 +49,17 @@ export class LLMManager {
       await this.initialize();
     }
 
-    try {
-      const config = this.currentConfig;
-      
-      if (config.apiType === 'ollama') {
-        await this.sendOllamaMessage(message, conversationHistory, onChunk, onComplete, onError);
-      } else if (config.apiType === 'vllm') {
-        await this.sendVLLMMessage(message, conversationHistory, onChunk, onComplete, onError);
-      } else {
-        throw new Error(`Unsupported API type: ${config.apiType}`);
-      }
-    } catch (error) {
-      Utils.logError('LLMManager.sendMessage', error);
-      if (onError) onError(error);
-      throw error;
+    // Update language setting
+    this.currentLanguage = await this.getCurrentLanguage();
+
+    const apiType = this.currentConfig.apiType;
+    
+    if (apiType === 'ollama') {
+      return this.sendOllamaMessage(message, conversationHistory, onChunk, onComplete, onError);
+    } else if (apiType === 'vllm') {
+      return this.sendVLLMMessage(message, conversationHistory, onChunk, onComplete, onError);
+    } else {
+      throw new Error(`Unsupported API type: ${apiType}`);
     }
   }
 
@@ -57,8 +69,12 @@ export class LLMManager {
   async sendOllamaMessage(message, conversationHistory, onChunk, onComplete, onError) {
     const config = this.currentConfig;
     
-    // Prepare messages array
+    // Get system prompt based on current language
+    const systemPrompt = getSystemPrompt(this.currentLanguage);
+    
+    // Prepare messages array with system prompt (system prompt is not part of conversation history)
     const messages = [
+      { role: 'system', content: systemPrompt },
       ...conversationHistory,
       { role: 'user', content: message }
     ];
@@ -97,8 +113,12 @@ export class LLMManager {
   async sendVLLMMessage(message, conversationHistory, onChunk, onComplete, onError) {
     const config = this.currentConfig;
     
-    // Prepare messages array for vLLM
+    // Get system prompt based on current language
+    const systemPrompt = getSystemPrompt(this.currentLanguage);
+    
+    // Prepare messages array for vLLM with system prompt (system prompt is not part of conversation history)
     const messages = [
+      { role: 'system', content: systemPrompt },
       ...conversationHistory,
       { role: 'user', content: message }
     ];
