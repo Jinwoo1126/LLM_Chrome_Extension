@@ -229,6 +229,10 @@ export class ChromeUtils {
       const response = await this.sendMessage({
         action: APP_CONSTANTS.MESSAGE_TYPES.CHECK_CONTEXT_ACTION
       });
+      
+      // Debug logging
+      console.log('ChromeUtils.checkContextAction response:', response);
+      
       return response;
     } catch (error) {
       console.error('Error checking context action:', error);

@@ -78,40 +78,51 @@ export class SelectionManager {
 
   /**
    * Setup selection monitoring with throttling
+   * Re-enabled for side panel context action detection
    */
   setupSelectionMonitoring() {
-    const checkInterval = setInterval(() => {
-      if (!this.isSelectionStored) {
-        this.debouncedCheckSelection();
-      }
-    }, APP_CONSTANTS.SELECTION_THROTTLE_LIMIT);
-
-    // Clean up interval when page unloads
-    window.addEventListener('beforeunload', () => {
-      clearInterval(checkInterval);
-    });
+    // Check if we're in side panel mode
+    const isSidePanel = window.location.search.includes('side_panel=true') || 
+                       document.body.classList.contains('side-panel-mode');
+    
+    if (isSidePanel) {
+      // For side panel, check context actions more frequently
+      console.log('SelectionManager: Side panel detected - enabling context action monitoring');
+      const checkInterval = setInterval(() => {
+        this.checkForSelection();
+      }, 2000); // Check every 2 seconds for context actions
+      
+      // Clean up interval when page unloads
+      window.addEventListener('beforeunload', () => {
+        clearInterval(checkInterval);
+      });
+    } else {
+      // For popup, only check once on initialization
+      console.log('SelectionManager: Popup mode - checking context actions once');
+    }
+    
+    // Always check for context actions on initialization
+    this.checkForSelection();
   }
 
   /**
    * Check for selected text from various sources
+   * Checks context actions and logs for debugging
    */
   async checkForSelection() {
     try {
-      // First check for context actions (from right-click menu)
+      // Check for context actions (from right-click menu)
       const contextAction = await this.checkForContextAction();
       if (contextAction && contextAction.hasAction) {
+        console.log('SelectionManager: Context action detected:', contextAction);
         return;
       }
 
-      // Then check for current selection
-      const response = await ChromeUtils.getSelectedText();
-      const selectedText = response || '';
-
-      if (selectedText && selectedText !== this.currentSelection) {
-        this.updateSelection(selectedText);
-      } else if (!selectedText && this.currentSelection && !this.isSelectionStored) {
-        // Clear selection if no text is selected and not stored
-        this.updateSelection('');
+      // For debugging: log when no context action is found
+      const isSidePanel = window.location.search.includes('side_panel=true') || 
+                         document.body.classList.contains('side-panel-mode');
+      if (isSidePanel) {
+        console.log('SelectionManager: No context action found in side panel mode');
       }
     } catch (error) {
       Utils.logError('SelectionManager.checkForSelection', error);
