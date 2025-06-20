@@ -201,40 +201,22 @@ export class SelectionManager {
 
   /**
    * Handle summarization
+   * NOTE: Disabled to prevent duplicate calls. popup.js handles button clicks directly.
    */
   async handleSummarize() {
-    if (!this.currentSelection.trim()) {
-      const errorMessage = getLocalizedMessage('ERROR_NO_SELECTION', this.currentLanguage);
-      alert(errorMessage);
-      return;
-    }
-
-    const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', this.currentLanguage) + this.currentSelection;
-    
-    this.dispatchSelectionEvent('actionRequested', {
-      action: 'summarize',
-      prompt: prompt,
-      selection: this.currentSelection
-    });
+    // Disabled - popup.js handles this directly to avoid duplicate calls
+    console.log('SelectionManager.handleSummarize - disabled to prevent duplicate calls');
+    return;
   }
 
   /**
    * Handle translation
+   * NOTE: Disabled to prevent duplicate calls. popup.js handles button clicks directly.
    */
   async handleTranslate() {
-    if (!this.currentSelection.trim()) {
-      const errorMessage = getLocalizedMessage('ERROR_NO_SELECTION', this.currentLanguage);
-      alert(errorMessage);
-      return;
-    }
-
-    const prompt = getLocalizedMessage('TRANSLATION_PROMPT', this.currentLanguage) + this.currentSelection;
-    
-    this.dispatchSelectionEvent('actionRequested', {
-      action: 'translate',
-      prompt: prompt,
-      selection: this.currentSelection
-    });
+    // Disabled - popup.js handles this directly to avoid duplicate calls
+    console.log('SelectionManager.handleTranslate - disabled to prevent duplicate calls');
+    return;
   }
 
   /**

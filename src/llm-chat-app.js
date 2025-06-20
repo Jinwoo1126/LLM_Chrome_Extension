@@ -70,7 +70,8 @@ export class LLMChatApp {
     // Selection events
     document.addEventListener('selection:selectionStored', this.handleSelectionStored.bind(this));
     document.addEventListener('selection:selectionReset', this.handleSelectionReset.bind(this));
-    document.addEventListener('selection:actionRequested', this.handleSelectionAction.bind(this));
+    // NOTE: Disabled selection:actionRequested to prevent duplicate calls - popup.js handles directly
+    // document.addEventListener('selection:actionRequested', this.handleSelectionAction.bind(this));
 
     // Window events
     window.addEventListener('beforeunload', this.handleBeforeUnload.bind(this));
@@ -138,6 +139,81 @@ export class LLMChatApp {
       // ...existing error handling...
       Utils.logError && Utils.logError('LLMChatApp.handleSendMessage', error);
       this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+    } finally {
+      this.isSendingMessage = false;
+      this.uiManager.setSendButtonState(true);
+      this.uiManager.focusInput && this.uiManager.focusInput();
+    }
+  }
+
+  /**
+   * Send message to LLM (public method for direct use)
+   * @param {string} message - Message to send
+   * @param {boolean} addToUI - Whether to add user message to UI
+   * @returns {Promise<string>} - Assistant response
+   */
+  async sendMessage(message, addToUI = true) {
+    if (this.isSendingMessage || !message.trim()) {
+      return '';
+    }
+
+    try {
+      this.isSendingMessage = true;
+      this.uiManager.setSendButtonState(false);
+
+      const currentSelection = this.selectionManager.getCurrentSelection && this.selectionManager.getCurrentSelection();
+      
+      // Add user message to conversation and optionally to UI
+      this.conversationManager.addMessage(message, true, currentSelection);
+      if (addToUI) {
+        this.uiManager.addMessage(message, true, currentSelection);
+        this.uiManager.clearInput();
+      }
+
+      // Send to LLM - this will handle assistant response UI
+      await this.sendToLLM(message, currentSelection);
+
+    } catch (error) {
+      Utils.logError && Utils.logError('LLMChatApp.sendMessage', error);
+      this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      throw error;
+    } finally {
+      this.isSendingMessage = false;
+      this.uiManager.setSendButtonState(true);
+      this.uiManager.focusInput && this.uiManager.focusInput();
+    }
+  }
+
+  /**
+   * Send message to LLM without adding user message to UI (for custom messages)
+   * UI는 caller에서 이미 처리된 상태이므로 conversation history와 LLM 처리만 수행
+   * @param {string} displayMessage - Message to show in conversation history
+   * @param {string} actualMessage - Actual message to send to LLM
+   * @returns {Promise<void>}
+   */
+  async sendMessageRaw(displayMessage, actualMessage) {
+    if (this.isSendingMessage || !actualMessage.trim()) {
+      return;
+    }
+
+    try {
+      this.isSendingMessage = true;
+      this.uiManager.setSendButtonState(false);
+
+      const currentSelection = this.selectionManager.getCurrentSelection && this.selectionManager.getCurrentSelection();
+      
+      // Add display message to conversation history (not the full prompt)
+      // UI는 caller에서 이미 추가되었으므로 여기서는 conversation history에만 추가
+      this.conversationManager.addMessage(displayMessage, true, currentSelection);
+
+      // Send actual message to LLM - actualMessage already contains the full prompt
+      // so we don't need to add selection again
+      await this.sendToLLM(actualMessage, '');
+
+    } catch (error) {
+      Utils.logError && Utils.logError('LLMChatApp.sendMessageRaw', error);
+      this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      throw error;
     } finally {
       this.isSendingMessage = false;
       this.uiManager.setSendButtonState(true);

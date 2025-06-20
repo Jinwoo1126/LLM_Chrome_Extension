@@ -102,25 +102,27 @@ document.addEventListener('DOMContentLoaded', async function() {
     const resetBtn = document.getElementById('reset-selection');
 
     if (summarizeBtn) {
-      summarizeBtn.addEventListener('click', () => {
+      summarizeBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         if (currentSelection) {
           const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
-          // UI에는 간단한 메시지만 표시
-          addMessage('📝 요약 요청', true);
-          sendMessage(prompt);
-          hideSelectionInfo();
+          // UI에는 간단한 메시지만 표시하고, 실제 LLM에는 전체 프롬프트 전송
+          sendCustomMessage('📝 요약 요청', prompt);
+          // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
         }
       });
     }
 
     if (translateBtn) {
-      translateBtn.addEventListener('click', () => {
+      translateBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
         if (currentSelection) {
           const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
-          // UI에는 간단한 메시지만 표시
-          addMessage('🌐 번역 요청', true);
-          sendMessage(prompt);
-          hideSelectionInfo();
+          // UI에는 간단한 메시지만 표시하고, 실제 LLM에는 전체 프롬프트 전송
+          sendCustomMessage('🌐 번역 요청', prompt);
+          // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
         }
       });
     }
@@ -153,19 +155,21 @@ document.addEventListener('DOMContentLoaded', async function() {
       if (response.selection) {
         showSelectionInfo(response.selection);
         
-        // Handle specific actions
+        // Handle specific actions directly without clicking buttons to avoid duplicate calls
         if (response.action === 'summarize') {
           setTimeout(() => {
-            const summarizeBtn = document.getElementById('summarize-selection');
-            if (summarizeBtn) {
-              summarizeBtn.click();
+            if (currentSelection) {
+              const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
+              sendCustomMessage('📝 요약 요청', prompt);
+              // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
             }
           }, 500);
         } else if (response.action === 'translate') {
           setTimeout(() => {
-            const translateBtn = document.getElementById('translate-selection');
-            if (translateBtn) {
-              translateBtn.click();
+            if (currentSelection) {
+              const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
+              sendCustomMessage('🌐 번역 요청', prompt);
+              // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
             }
           }, 500);
         }
@@ -301,8 +305,26 @@ function addMessage(message, isUser = false) {
 async function sendMessage(message) {
   if (window.llmChatApp) {
     try {
-      const response = await window.llmChatApp.sendMessage(message);
-      addMessage(response, false);
+      // Let LLMChatApp handle all UI updates
+      await window.llmChatApp.sendMessage(message, true); // true = add to UI
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
+      addMessage(errorMessage, false);
+    }
+  }
+}
+
+// Send custom message with different display and actual content
+async function sendCustomMessage(displayMessage, actualMessage) {
+  if (window.llmChatApp) {
+    try {
+      // Add display message to UI first
+      addMessage(displayMessage, true);
+      
+      // Send to LLM with separate display and actual messages
+      // UI는 이미 추가되었으므로 conversation history와 LLM 처리만 필요
+      await window.llmChatApp.sendMessageRaw(displayMessage, actualMessage);
     } catch (error) {
       console.error('Failed to send message:', error);
       const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
