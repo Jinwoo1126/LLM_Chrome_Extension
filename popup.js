@@ -128,53 +128,101 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        hideSelectionInfo();
-        // Clear selection in content script
-        chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-          if (tabs[0]) {
-            chrome.tabs.sendMessage(tabs[0].id, {action: 'clearSelection'});
-          }
-        });
+      resetBtn.addEventListener('click', async () => {
+        try {
+          hideSelectionInfo();
+          // Clear selection using background script as a safer approach
+          await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({action: 'clearSelection'}, function(response) {
+              if (chrome.runtime.lastError) {
+                console.log('Could not send clearSelection message to background:', chrome.runtime.lastError.message);
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve(response);
+              }
+            });
+          });
+          console.log('Selection cleared successfully');
+        } catch (error) {
+          console.log('Failed to clear selection:', error.message);
+          // Selection clearing failed, but at least hide the UI selection info
+        }
       });
     }
   }
 
-  // Listen for messages from content script
+  // Listen for messages from content script and background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'selectionChanged' && message.selectedText) {
       showSelectionInfo(message.selectedText);
     }
-  });
-
-  // Check for context actions (right-click menu actions)
-  chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-    if (response && response.action) {
-      console.log('Context action detected:', response.action);
+    
+    // Handle context action notifications from background script
+    if (message.action === 'contextActionNotification') {
+      console.log('Received context action notification:', message.contextAction, 'with selection:', message.contextSelection);
       
-      if (response.selection) {
-        showSelectionInfo(response.selection);
+      if (message.contextSelection) {
+        showSelectionInfo(message.contextSelection);
         
-        // Handle specific actions directly without clicking buttons to avoid duplicate calls
-        if (response.action === 'summarize') {
+        // Handle specific actions directly
+        if (message.contextAction === 'summarize') {
           setTimeout(() => {
             if (currentSelection) {
               const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
               sendCustomMessage('📝 요약 요청', prompt);
-              // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
             }
           }, 500);
-        } else if (response.action === 'translate') {
+        } else if (message.contextAction === 'translate') {
           setTimeout(() => {
             if (currentSelection) {
               const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
               sendCustomMessage('🌐 번역 요청', prompt);
-              // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
             }
           }, 500);
         }
       }
     }
+  });
+
+  // Check for context actions (right-click menu actions)
+  function checkContextAction() {
+    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
+      if (response && response.action) {
+        console.log('Context action detected:', response.action);
+        
+        if (response.selection) {
+          showSelectionInfo(response.selection);
+          
+          // Handle specific actions directly without clicking buttons to avoid duplicate calls
+          if (response.action === 'summarize') {
+            setTimeout(() => {
+              if (currentSelection) {
+                const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
+                sendCustomMessage('📝 요약 요청', prompt);
+              }
+            }, 500);
+          } else if (response.action === 'translate') {
+            setTimeout(() => {
+              if (currentSelection) {
+                const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
+                sendCustomMessage('🌐 번역 요청', prompt);
+              }
+            }, 500);
+          }
+        }
+      }
+    });
+  }
+
+  // Initial check for context actions
+  checkContextAction();
+
+  // Set up periodic check for context actions when panel is already open
+  const contextCheckInterval = setInterval(checkContextAction, 2000);
+
+  // Clean up interval when page unloads
+  window.addEventListener('beforeunload', () => {
+    clearInterval(contextCheckInterval);
   });
 
   // Send button event listener
