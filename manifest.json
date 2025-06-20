@@ -33,7 +33,11 @@
       "resources": [
         "marked.min.js",
         "highlight.min.js",
-        "highlight.css"
+        "highlight.css",
+        "src/*.js",
+        "src/constants/*.js",
+        "src/modules/*.js",
+        "src/utils/*.js"
       ],
       "matches": ["<all_urls>"]
     }

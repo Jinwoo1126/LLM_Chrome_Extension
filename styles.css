@@ -7,6 +7,122 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* Chat tabs styles */
+.chat-tabs {
+  display: flex;
+  background-color: #F9FAFB;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  font-weight: 500;
+  color: #6B7280;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  border-bottom: 2px solid transparent;
+}
+
+.tab-button:hover {
+  background-color: #F3F4F6;
+  color: #374151;
+}
+
+.tab-button.active {
+  color: #4338CA;
+  border-bottom-color: #4338CA;
+  background-color: #FFFFFF;
+}
+
+/* Settings panel styles */
+.settings-panel {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  background-color: #FFFFFF;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.settings-panel.hidden {
+  display: none;
+}
+
+/* Chat content styles */
+.chat-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-content.hidden {
+  display: none;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-group label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.settings-group select {
+  padding: 10px 12px;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  font-size: 14px;
+  background-color: #FFFFFF;
+  color: #374151;
+  transition: all 0.2s ease-in-out;
+}
+
+.settings-group select:hover {
+  border-color: #4338CA;
+}
+
+.settings-group select:focus {
+  outline: none;
+  border-color: #4338CA;
+  box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.1);
+}
+
+.save-settings-button {
+  padding: 12px 24px;
+  background-color: #4338CA;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  align-self: flex-start;
+  margin-top: 10px;
+}
+
+.save-settings-button:hover {
+  background-color: #3730A3;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.save-settings-button:active {
+  transform: translateY(0);
+}
+
 /* Popup mode specific styles */
 .popup-mode {
   width: 100%;
@@ -14,6 +130,8 @@
   margin: 0;
   padding: 0;
   overflow: hidden;
+  --bg-color: #ffffff;
+  --border-color: #e9ecef;
 }
 
 .popup-mode .container {
@@ -65,10 +183,38 @@
   padding: 0;
 }
 
+.popup-mode .chat-tabs {
+  padding: 0;
+}
+
+.popup-mode .tab-button {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
 .popup-mode .chat-messages {
   flex: 1;
   overflow-y: auto;
   padding: 12px;
+}
+
+.popup-mode .settings-panel {
+  padding: 16px;
+  gap: 16px;
+}
+
+.popup-mode .settings-group label {
+  font-size: 13px;
+}
+
+.popup-mode .settings-group select {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.popup-mode .save-settings-button {
+  padding: 10px 20px;
+  font-size: 13px;
 }
 
 .popup-mode .input-container {
@@ -201,6 +347,158 @@ body.side-panel-mode {
   left: 0;
   right: 0;
   bottom: 0;
+  --bg-color: #ffffff;
+  --border-color: #e9ecef;
+}
+
+body.side-panel-mode .container {
+  width: 100%;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+body.side-panel-mode .header {
+  padding: 8px 12px;
+  min-height: 40px;
+  flex-shrink: 0;
+}
+
+body.side-panel-mode .header-content {
+  gap: 8px;
+}
+
+body.side-panel-mode .logo {
+  font-size: 14px;
+  gap: 6px;
+}
+
+body.side-panel-mode .logo-icon {
+  width: 20px;
+  height: 20px;
+}
+
+body.side-panel-mode .model-selector {
+  margin: 0;
+}
+
+body.side-panel-mode .model-selector select {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+body.side-panel-mode .chat-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+body.side-panel-mode .chat-tabs {
+  padding: 0;
+}
+
+body.side-panel-mode .tab-button {
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+body.side-panel-mode .chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+body.side-panel-mode .settings-panel {
+  padding: 16px;
+  gap: 16px;
+}
+
+body.side-panel-mode .settings-group label {
+  font-size: 13px;
+}
+
+body.side-panel-mode .settings-group select {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+body.side-panel-mode .save-settings-button {
+  padding: 10px 20px;
+  font-size: 13px;
+}
+
+body.side-panel-mode .input-container {
+  padding: 8px;
+  gap: 8px;
+  background: var(--bg-color);
+  border-top: 1px solid var(--border-color);
+}
+
+body.side-panel-mode #user-input {
+  height: 36px;
+  padding: 8px;
+  font-size: 13px;
+  resize: none;
+}
+
+body.side-panel-mode #send-button {
+  height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+body.side-panel-mode .selection-info {
+  margin: 8px;
+}
+
+body.side-panel-mode .selection-header {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+body.side-panel-mode .selection-content {
+  padding: 8px;
+}
+
+body.side-panel-mode .selection-text {
+  font-size: 13px;
+  max-height: 100px;
+}
+
+body.side-panel-mode .selection-buttons {
+  gap: 6px;
+  margin-top: 8px;
+}
+
+body.side-panel-mode .selection-buttons button {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+/* Message styles for side panel mode */
+body.side-panel-mode .message {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+body.side-panel-mode .message pre {
+  margin: 8px 0;
+  padding: 8px;
+  font-size: 12px;
+}
+
+body.side-panel-mode .message code {
+  font-size: 12px;
 }
 
 body {
@@ -295,6 +593,15 @@ body {
 .assistant-message:hover {
   background-color: #E8F2FF;
   border-color: #BFDBFE;
+}
+
+/* Timestamp styles */
+.message-timestamp {
+  color: #999;
+  font-size: 11px;
+  margin-top: 2px;
+  text-align: right;
+  font-family: inherit;
 }
 
 /* Markdown styles */

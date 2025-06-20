@@ -1,536 +1,243 @@
-document.addEventListener('DOMContentLoaded', function() {
-  console.log('Extension loaded');
+// Import modules
+import { LLMChatApp } from './src/llm-chat-app.js';
+import { getLocalizedMessage } from './src/constants/app-constants.js';
+
+// Global variables
+let chatMessages, userInput, sendButton, isSendingMessage = false;
+let isSelectionStored = false, currentSelection = '';
+let selectionInfo, selectionPreview;
+let currentLanguage = 'ko';
+
+// Initialize application when DOM is loaded
+document.addEventListener('DOMContentLoaded', async function() {
+  console.log('LLM Chat Extension loading...');
   
-  // Detect if we're in popup or side panel mode
-  const isSidePanel = window.location.search.includes('side_panel=true');
-  document.body.classList.add(isSidePanel ? 'side-panel-mode' : 'popup-mode');
+  // Initialize global variables
+  chatMessages = document.getElementById('chat-messages');
+  userInput = document.getElementById('user-input');
+  sendButton = document.getElementById('send-button');
+  selectionInfo = document.getElementById('selection-info');
+  selectionPreview = document.getElementById('selection-preview');
   
-  // Verify that required libraries are loaded
-  if (typeof marked === 'undefined') {
-    console.error('marked library not loaded');
-    alert('Error: Markdown library not loaded. Please refresh the page.');
-    return;
+  // Load current language setting
+  await loadCurrentLanguage();
+  
+  try {
+    // Create and initialize the main application
+    const app = new LLMChatApp();
+    await app.initialize();
+    
+    // Make app globally accessible for debugging
+    window.llmChatApp = app;
+    
+    console.log('LLM Chat Extension loaded successfully');
+  } catch (error) {
+    console.error('Failed to initialize LLM Chat Extension:', error);
+    alert('Failed to load the extension. Please refresh the page.');
   }
-  if (typeof hljs === 'undefined') {
-    console.error('highlight.js library not loaded');
-    alert('Error: Syntax highlighting library not loaded. Please refresh the page.');
-    return;
-  }
 
-  const chatMessages = document.getElementById('chat-messages');
-  const userInput = document.getElementById('user-input');
-  const sendButton = document.getElementById('send-button');
-  const modelSelect = document.getElementById('model-select');
-  
-  // New elements for selection display
-  const selectionInfo = document.getElementById('selection-info');
-  const selectionPreview = document.getElementById('selection-preview');
-  const useSelectionButton = document.getElementById('use-selection');
-  const resetSelectionButton = document.getElementById('reset-selection');
-  const selectionHeader = document.querySelector('.selection-header');
-  const selectionContent = document.querySelector('.selection-content');
-  const selectionHeaderIcon = document.querySelector('.selection-header-icon');
-  
-  // Current selection state
-  let currentSelection = '';
-  // New flag to track if selection is stored for use
-  let isSelectionStored = false;
-  // Track selection content visibility
-  let isSelectionContentVisible = true;
-  // Add flag to track if message is being sent
-  let isSendingMessage = false;
-  // Add flag to track if an action is being processed
-  let isProcessingAction = false;
-  // Add flag to track if we've already handled the initial context action
-  let hasHandledInitialAction = false;
-  // Add flag to track chat mode (selection or normal)
-  let isSelectionMode = false;
+  // 탭 버튼 및 패널
+  const tabChat = document.getElementById('tab-chat');
+  const tabSettings = document.getElementById('tab-settings');
+  const settingsPanel = document.getElementById('settings-panel');
+  const chatContent = document.getElementById('chat-content');
 
-  // Conversation history for multi-turn chat
-  let conversationHistory = [];
-  
-  // Maximum number of turns to keep in history (to prevent context from getting too long)
-  const MAX_HISTORY_TURNS = 5;
-
-  // Initialize model selector
-  function initializeModelSelector() {
-    // Add vLLM option
-    const vllmOption = document.createElement('option');
-    vllmOption.value = 'vllm';
-    vllmOption.textContent = 'vLLM';
-    modelSelect.appendChild(vllmOption);
-
-    // Add Ollama options
-    Object.entries(MODEL_CONFIG.ollama.models).forEach(([key, model]) => {
-      const option = document.createElement('option');
-      option.value = key;
-      option.textContent = model.name;
-      modelSelect.appendChild(option);
+  if (tabChat && tabSettings && chatMessages && settingsPanel && chatContent) {
+    // Chat 탭 클릭 시
+    tabChat.addEventListener('click', () => {
+      tabChat.classList.add('active');
+      tabSettings.classList.remove('active');
+      chatContent.style.display = 'flex';
+      settingsPanel.classList.add('hidden');
     });
 
-    // Load saved model preference
-    chrome.storage.local.get(['selectedModel'], function(result) {
-      if (result.selectedModel) {
-        modelSelect.value = result.selectedModel;
-      }
+    // Settings 탭 클릭 시
+    tabSettings.addEventListener('click', () => {
+      tabSettings.classList.add('active');
+      tabChat.classList.remove('active');
+      chatContent.style.display = 'none';
+      settingsPanel.classList.remove('hidden');
     });
 
-    // Hide model selector but keep the container visible for clear button
-    modelSelect.style.display = 'none';
-  }
-
-  // Save conversation history to Chrome storage
-  function saveConversationHistory() {
-    chrome.storage.local.set({ conversationHistory: conversationHistory });
-  }
-
-  // Load conversation history from Chrome storage
-  function loadConversationHistory() {
-    chrome.storage.local.get(['conversationHistory'], function(result) {
-      if (result.conversationHistory && Array.isArray(result.conversationHistory)) {
-        conversationHistory = result.conversationHistory;
+    // 설정 저장
+    const saveBtn = document.getElementById('save-settings');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', async () => {
+        const apiType = document.getElementById('api-type-select').value;
+        const lang = document.getElementById('lang-select').value;
         
-        // UI 복원 시 저장된 형식 그대로 표시
-        chatMessages.innerHTML = ''; // 기존 메시지 초기화
-        conversationHistory.forEach(msg => {
-          addMessageToUI(msg.content, msg.role === 'user');
+        // Update current language
+        currentLanguage = lang;
+        
+        chrome.storage.local.set({ apiType, lang }, () => {
+          const savedMessage = getLocalizedMessage('SETTINGS_SAVED', currentLanguage);
+          alert(savedMessage);
         });
-      }
-    });
-  }
-
-  // Clear conversation history
-  function clearConversationHistory() {
-    if (confirm('Are you sure you want to clear the conversation history?')) {
-      conversationHistory = [];
-      chatMessages.innerHTML = '';
-      saveConversationHistory();
+      });
     }
-  }
 
-  // Add clear history button to the model selector area
-  function addClearHistoryButton() {
-    const modelSelectorDiv = document.querySelector('.model-selector');
-    const clearButton = document.createElement('button');
-    clearButton.id = 'clear-history';
-    clearButton.textContent = '🗑️ Clear';
-    clearButton.title = 'Clear conversation history';
-    clearButton.style.marginLeft = '8px';
-    clearButton.style.fontSize = '13px';
-    clearButton.style.padding = '6px 12px';
-    clearButton.style.backgroundColor = '#6c757d';
-    clearButton.style.color = 'white';
-    clearButton.style.border = 'none';
-    clearButton.style.borderRadius = '6px';
-    clearButton.style.cursor = 'pointer';
-    clearButton.style.transition = 'all 0.2s ease-in-out';
-    
-    clearButton.addEventListener('mouseover', () => {
-      clearButton.style.backgroundColor = '#5a6268';
-      clearButton.style.transform = 'translateY(-1px)';
-    });
-    
-    clearButton.addEventListener('mouseout', () => {
-      clearButton.style.backgroundColor = '#6c757d';
-      clearButton.style.transform = 'translateY(0)';
-    });
-    
-    clearButton.addEventListener('click', clearConversationHistory);
-    modelSelectorDiv.appendChild(clearButton);
-  }
-
-  // Initialize model selector
-  initializeModelSelector();
-  addClearHistoryButton();
-  loadConversationHistory();
-
-  // Save model preference when changed
-  modelSelect.addEventListener('change', function() {
-    chrome.storage.local.set({ selectedModel: modelSelect.value });
-  });
-
-  // Reset selection function
-  function resetSelection() {
-    // Reset selection state
-    currentSelection = '';
-    isSelectionStored = false;
-    isSelectionMode = false;  // Reset chat mode
-    hasHandledInitialAction = false;
-    
-    // Reset UI
-    selectionPreview.textContent = '';
-    selectionInfo.classList.add('hidden');
-    useSelectionButton.textContent = '📋 Use Selection';
-    useSelectionButton.classList.remove('selection-stored');
-    
-    // Notify background script to clear selection
-    chrome.runtime.sendMessage({ action: 'clearSelection' });
-    
-    // For side panel mode, don't reset the context action flag
-    // This ensures continued monitoring even after reset
-    if (isSidePanel) {
-      console.log('Side panel mode: maintaining selection monitoring after reset');
+    // 설정값 불러오기
+    function loadSettings() {
+      chrome.storage.local.get(['apiType', 'lang'], (result) => {
+        if (result.apiType) document.getElementById('api-type-select').value = result.apiType;
+        if (result.lang) document.getElementById('lang-select').value = result.lang;
+      });
     }
+
+    // 설정 탭 진입 시 불러오기
+    tabSettings.addEventListener('click', loadSettings);
+
+    // 초기 상태 설정 (챗 탭이 기본)
+    tabChat.classList.add('active');
+    tabSettings.classList.remove('active');
+    chatContent.style.display = 'flex';
+    settingsPanel.classList.add('hidden');
   }
 
-  // Handle reset button click
-  resetSelectionButton.addEventListener('click', resetSelection);
+  // Selected text functionality
+  if (selectionInfo && selectionPreview) {
+    // Selection buttons
+    const summarizeBtn = document.getElementById('summarize-selection');
+    const translateBtn = document.getElementById('translate-selection');
+    const resetBtn = document.getElementById('reset-selection');
 
-  // Configure marked
-  marked.setOptions({
-    highlight: function(code, lang) {
-      if (lang && hljs.getLanguage(lang)) {
-        return hljs.highlight(code, { language: lang }).value;
-      }
-      return hljs.highlightAuto(code).value;
-    },
-    breaks: true
-  });
-
-  // Check for selected text when popup opens
-  function checkForSelection() {
-    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-      const isSidePanel = window.location.search.includes('side_panel=true');
-      
-      // 사이드패널 모드에서는 항상 context action을 처리
-      if (response && response.action && response.selection) {
-        const newSelection = response.selection || '';
-        currentSelection = newSelection;
-        console.log('Selection from context:', currentSelection);
-        updateSelectionUI(currentSelection);
-        isSelectionStored = true;
-        useSelectionButton.textContent = '✅ Selection Ready';
-        useSelectionButton.classList.add('selection-stored');
-        
-        if (response.action === 'summarize') {
-          handleSummarize();
-        } else if (response.action === 'translate') {
-          handleTranslate();
-        }
-        return;
-      }
-      
-      // context action이 없을 때는 현재 selection 확인
-      chrome.runtime.sendMessage({ action: 'getSelectedText' }, (response) => {
-        if (response && response.selectedText) {
-          // 새로운 선택 텍스트가 있으면 항상 업데이트
-          currentSelection = response.selectedText;
-          console.log('New selection received:', currentSelection);
-          updateSelectionUI(currentSelection);
-          
-          // 사이드패널 모드에서는 자동으로 선택 텍스트 저장
-          if (isSidePanel) {
-            isSelectionStored = true;
-            useSelectionButton.textContent = '✅ Selection Ready';
-            useSelectionButton.classList.add('selection-stored');
-          }
-        } else if (!response || !response.selectedText) {
-          // 선택된 텍스트가 없는 경우 초기화
-          resetSelection();
+    if (summarizeBtn) {
+      summarizeBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (currentSelection) {
+          const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
+          // UI에는 간단한 메시지만 표시하고, 실제 LLM에는 전체 프롬프트 전송
+          sendCustomMessage('📝 요약 요청', prompt);
+          // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
         }
       });
-    });
-  }
-  
-  // Update the UI to show selected text
-  function updateSelectionUI(text) {
-    console.log('Updating selection UI with:', text);
-    if (text && text.trim().length > 0) {
-      // Truncate if too long
-      const maxPreviewLength = 150;
-      const previewText = text.length > maxPreviewLength 
-        ? text.substring(0, maxPreviewLength) + '...' 
-        : text;
-      
-      // Update and show the selection UI
-      selectionPreview.textContent = previewText;
-      selectionInfo.classList.remove('hidden');
-    } else {
-      // Hide the selection UI if no selection
-      selectionInfo.classList.add('hidden');
-      console.log('No selection to show, hiding UI');
-      
-      // 선택 영역이 없어진 경우에만 저장 상태 초기화
-      isSelectionStored = false;
-      useSelectionButton.textContent = '📋 Use Selection';
-      useSelectionButton.classList.remove('selection-stored');
-    }
-  }
-  
-  // Handle the use selection button
-  useSelectionButton.addEventListener('click', function() {
-    if (currentSelection) {
-      // Instead of adding to input, just toggle the internal flag
-      isSelectionStored = !isSelectionStored;
-      
-      // Provide visual feedback
-      if (isSelectionStored) {
-        useSelectionButton.textContent = '✅ Selection Ready';
-        useSelectionButton.classList.add('selection-stored');
-      } else {
-        useSelectionButton.textContent = '📋 Use Selection';
-        useSelectionButton.classList.remove('selection-stored');
-      }
-    }
-  });
-
-  // Toggle selection content visibility
-  selectionHeader.addEventListener('click', () => {
-    isSelectionContentVisible = !isSelectionContentVisible;
-    selectionContent.classList.toggle('collapsed', !isSelectionContentVisible);
-    selectionHeaderIcon.classList.toggle('collapsed', !isSelectionContentVisible);
-  });
-
-  // Add throttle function
-  function throttle(func, limit) {
-    let inThrottle;
-    return function(...args) {
-      if (!inThrottle) {
-        func.apply(this, args);
-        inThrottle = true;
-        setTimeout(() => inThrottle = false, limit);
-      }
-    };
-  }
-
-  // Add debounce function
-  function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-  }
-
-  // Send message to LLM with streaming
-  async function sendMessage(message, currentSelection) {
-    console.log('Sending message:', message);
-
-    let messageToSend = [];
-    const hasSelection = currentSelection && currentSelection.trim().length > 0 && isSelectionStored;
-
-    // Update mode without clearing history
-    isSelectionMode = hasSelection;
-    
-    // Store original user message for conversation history
-    const originalUserMsg = { role: 'user', content: message };
-    
-    if (hasSelection) {
-      // Set up context for selection-based chat
-      const systemPrompt = '[Selected text]부분이 있다면 참고하여 주어진 [지시사항]에 답변해주세요. 필요하면 이전대화도 참고해주세요. 불필요하다고 생각되면 이전대화는 무시해도 됩니다.';
-      const userMsgForLLM = {
-        role: 'user',
-        content: `[Selected text]:\n"${currentSelection}"\n\n[지시사항]\n${message}\n\n답변:`
-      };
-      
-      // Include system prompt only if starting a new conversation
-      if (conversationHistory.length === 0) {
-        messageToSend.push({ role: 'system', content: systemPrompt });
-      }
-      
-      messageToSend = [
-        ...messageToSend,
-        ...conversationHistory,
-        userMsgForLLM
-      ];
-
-      // Update conversation history with original user message only
-      conversationHistory.push(originalUserMsg);
-    } else {
-      // Normal chat mode
-      messageToSend = [
-        ...conversationHistory,
-        originalUserMsg
-      ];
-
-      // Update conversation history with original user message
-      conversationHistory.push(originalUserMsg);
     }
 
-    // Trim conversation history if it's too long
-    if (conversationHistory.length > MAX_HISTORY_TURNS * 2) {
-      // Ensure we keep pairs of messages and maintain the alternating pattern
-      const startIdx = conversationHistory.length - (MAX_HISTORY_TURNS * 2);
-      // If starting with assistant message, shift by one to start with user
-      const adjustedStartIdx = conversationHistory[startIdx].role === 'assistant' ? startIdx + 1 : startIdx;
-      conversationHistory = conversationHistory.slice(adjustedStartIdx);
-    }
-    
-    // Save conversation history
-    saveConversationHistory();
-
-    // 로그: 실제 발송 메시지와 대화 기록 저장 메시지
-    console.log('Message sent to LLM:', messageToSend);
-    console.log('Current conversation history:', conversationHistory);
-    
-    try {
-      const selectedModel = modelSelect.value;
-      const isVllm = selectedModel === 'vllm';
-      
-      const endpoint = isVllm 
-        ? MODEL_CONFIG.vllm.endpoint
-        : MODEL_CONFIG.ollama.endpoint;
-
-      const requestBody = isVllm
-        ? {
-            model: MODEL_CONFIG.vllm.model,
-            messages: messageToSend,
-            ...MODEL_CONFIG.vllm.params
-          }
-        : {
-            model: selectedModel,
-            messages: messageToSend,
-            ...MODEL_CONFIG.ollama.models[selectedModel].params
-          };
-
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
+    if (translateBtn) {
+      translateBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (currentSelection) {
+          const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
+          // UI에는 간단한 메시지만 표시하고, 실제 LLM에는 전체 프롬프트 전송
+          sendCustomMessage('🌐 번역 요청', prompt);
+          // hideSelectionInfo(); // 선택 박스를 유지하기 위해 제거
+        }
       });
+    }
 
-      console.log('Response status:', response.status);
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantMessage = '';
-
-      // Create a message element for streaming
-      const messageDiv = document.createElement('div');
-      messageDiv.className = 'message assistant-message';
-      chatMessages.appendChild(messageDiv);
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        console.log('Received chunk:', chunk);
-        
+    if (resetBtn) {
+      resetBtn.addEventListener('click', async () => {
         try {
-          // Handle OpenAI-compatible streaming format (vLLM)
-          if (isVllm) {
-            // Split by newlines as each line is a separate JSON object
-            const lines = chunk.split('\n');
-            for (const line of lines) {
-              if (line.trim()) { // Skip empty lines
-                if (line.startsWith('data: ')) {
-                  const jsonStr = line.slice(6).trim(); // Remove 'data: ' prefix
-                  if (jsonStr === '[DONE]') continue;
-                  
-                  try {
-                    const parsed = JSON.parse(jsonStr);
-                    const content = parsed.choices?.[0]?.delta?.content || '';
-                    if (content) {
-                      assistantMessage += content;
-                      messageDiv.innerHTML = marked.parse(assistantMessage);
-                      messageDiv.querySelectorAll('pre code').forEach((block) => {
-                        hljs.highlightElement(block);
-                      });
-                      chatMessages.scrollTop = chatMessages.scrollHeight;
-                    }
-                  } catch (e) {
-                    console.error('Error parsing vLLM chunk:', e, jsonStr);
-                  }
-                }
+          hideSelectionInfo();
+          // Clear selection using background script as a safer approach
+          await new Promise((resolve, reject) => {
+            chrome.runtime.sendMessage({action: 'clearSelection'}, function(response) {
+              if (chrome.runtime.lastError) {
+                console.log('Could not send clearSelection message to background:', chrome.runtime.lastError.message);
+                reject(new Error(chrome.runtime.lastError.message));
+              } else {
+                resolve(response);
               }
-            }
-          } else {
-            // Handle Ollama format - single JSON object per chunk
-            const parsed = JSON.parse(chunk);
-            const content = parsed.message?.content || '';
-            if (content) {
-              assistantMessage += content;
-              messageDiv.innerHTML = marked.parse(assistantMessage);
-              messageDiv.querySelectorAll('pre code').forEach((block) => {
-                hljs.highlightElement(block);
-              });
-              chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
-          }
-        } catch (e) {
-          console.error('Error parsing streaming response:', e, chunk);
+            });
+          });
+          console.log('Selection cleared successfully');
+        } catch (error) {
+          console.log('Failed to clear selection:', error.message);
+          // Selection clearing failed, but at least hide the UI selection info
         }
-      }
-
-      // Add assistant message to conversation history after full response is received
-      const assistantMsg = { role: 'assistant', content: assistantMessage };
-      conversationHistory.push(assistantMsg);
-      saveConversationHistory();
-      
-      return assistantMessage;
-    } catch (error) {
-      console.error('Error:', error);
-      const errorMessage = `Sorry, there was an error processing your request: ${error.message}`;
-      
-      // Do not add error messages to conversation history to maintain the alternating pattern
-      return errorMessage;
+      });
     }
   }
 
-  // Add message to chat UI only
-  function addMessageToUI(message, isUser = false) {
-    const messageDiv = document.createElement('div');
-    messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
-    messageDiv.innerHTML = marked.parse(message);
-    chatMessages.appendChild(messageDiv);
+  // Listen for messages from content script and background script
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.action === 'selectionChanged' && message.selectedText) {
+      showSelectionInfo(message.selectedText);
+    }
     
-    // Apply syntax highlighting to code blocks
-    messageDiv.querySelectorAll('pre code').forEach((block) => {
-      hljs.highlightElement(block);
-    });
-
-    // Add click handlers for message selection headers
-    messageDiv.querySelectorAll('.message-selection-header').forEach(header => {
-      header.addEventListener('click', () => {
-        const content = header.nextElementSibling;
-        const icon = header.querySelector('.message-selection-icon');
-        content.classList.toggle('collapsed');
-        icon.classList.toggle('collapsed');
-      });
-    });
-    
-    // Scroll to bottom
-    chatMessages.scrollTop = chatMessages.scrollHeight;
-  }
-
-  // Add message to chat
-  function addMessage(message, isUser = false) {
-    addMessageToUI(message, isUser);
-  }
-
-  // Add auto-resize functionality to input
-  userInput.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = (this.scrollHeight) + 'px';
+    // Handle context action notifications from background script
+    if (message.action === 'contextActionNotification') {
+      console.log('Received context action notification:', message.contextAction, 'with selection:', message.contextSelection);
+      
+      if (message.contextSelection) {
+        showSelectionInfo(message.contextSelection);
+        
+        // Handle specific actions directly
+        if (message.contextAction === 'summarize') {
+          setTimeout(() => {
+            if (currentSelection) {
+              const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
+              sendCustomMessage('📝 요약 요청', prompt);
+            }
+          }, 500);
+        } else if (message.contextAction === 'translate') {
+          setTimeout(() => {
+            if (currentSelection) {
+              const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
+              sendCustomMessage('🌐 번역 요청', prompt);
+            }
+          }, 500);
+        }
+      }
+    }
   });
 
-  // Reset input height when message is sent
-  sendButton.addEventListener('click', async function() {
-    if (isSendingMessage) return;
-    
-    const message = userInput.value.trim();
-    if (message) {
-      isSendingMessage = true;
-      userInput.disabled = true;
+  // Check for context actions (right-click menu actions)
+  function checkContextAction() {
+    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
+      if (response && response.action) {
+        console.log('Context action detected:', response.action);
+        
+        if (response.selection) {
+          showSelectionInfo(response.selection);
+          
+          // Handle specific actions directly without clicking buttons to avoid duplicate calls
+          if (response.action === 'summarize') {
+            setTimeout(() => {
+              if (currentSelection) {
+                const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
+                sendCustomMessage('📝 요약 요청', prompt);
+              }
+            }, 500);
+          } else if (response.action === 'translate') {
+            setTimeout(() => {
+              if (currentSelection) {
+                const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
+                sendCustomMessage('🌐 번역 요청', prompt);
+              }
+            }, 500);
+          }
+        }
+      }
+    });
+  }
+
+  // Initial check for context actions
+  checkContextAction();
+
+  // Send button event listener
+  if (sendButton) {
+    sendButton.addEventListener('click', async function() {
+      if (isSendingMessage) return; // Prevent multiple submissions
       
+      const message = userInput.value.trim();
       let displayMessage = message;
       let messageToSend = message;
       
-      if (isSelectionStored && currentSelection) {
-        const maxLength = 100;
-        const truncatedText = currentSelection.length > maxLength 
-          ? currentSelection.substring(0, maxLength) + '...' 
-          : currentSelection;
-
-        // UI 표시용 포맷팅
-        const formattedDisplaySelection = `
+      if (messageToSend) {
+        isSendingMessage = true; // Set flag before sending
+        userInput.disabled = true; // Disable input while sending
+        
+        // If selection is stored, add it to the message internally
+        if (isSelectionStored && currentSelection) {
+          // UI에 표시되는 메시지용 간단한 형식
+          const maxLength = 100;
+          const truncatedText = currentSelection.length > maxLength 
+            ? currentSelection.substring(0, maxLength) + '...'
+            : currentSelection;
+          const formattedDisplaySelection = `
 <div class="message-selection">
   <div class="message-selection-header">
     <svg class="message-selection-icon collapsed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -542,153 +249,126 @@ document.addEventListener('DOMContentLoaded', function() {
     <pre>${truncatedText}</pre>
   </div>
 </div>`;
-
-        displayMessage = message + formattedDisplaySelection;
-      }
-      
-      // UI에 표시
-      addMessage(displayMessage, true);
-      userInput.value = '';
-      userInput.style.height = 'auto';
-      
-      try {
-        await sendMessage(message, currentSelection);
-      } finally {
-        isSendingMessage = false;
-        userInput.disabled = false;
-        userInput.focus();
-      }
-    }
-  });
-
-  // Handle Enter key
-  userInput.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter') {
-      if (e.shiftKey) {
-        // Shift + Enter: Allow new line
-        return;
-      } else {
-        // Enter only: Send message
-        e.preventDefault(); // Prevent default new line
-        if (!isSendingMessage) { // Only send if not already sending
-          console.log('Enter key pressed');
-          sendButton.click();
+          // UI에만 표시, LLM 전송에는 selection context를 포함하지 않음
+          if (message) {
+            displayMessage = message + formattedDisplaySelection;
+            messageToSend = message; // selection context 제거
+          } else {
+            displayMessage = formattedDisplaySelection;
+            messageToSend = '';
+          }
+          // Reset selection stored state after using it
+          isSelectionStored = false;
+          const useSelectionButton = document.getElementById('use-selection');
+          if (useSelectionButton) {
+            useSelectionButton.textContent = '\ud83d\udccb Use Selection';
+            useSelectionButton.classList.remove('selection-stored');
+          }
+        }
+        addMessage(displayMessage, true);
+        userInput.value = '';
+        userInput.style.height = 'auto'; // Reset height
+        try {
+          await sendMessage(messageToSend);
+        } finally {
+          isSendingMessage = false; // Reset flag after sending
+          userInput.disabled = false; // Re-enable input
+          userInput.focus(); // Focus back on input
         }
       }
-    }
-  });
-
-  // Check for selection when popup opens
-  checkForSelection();
-  
-  // Optimize selection monitoring
-  function setupSelectionMonitoring() {
-    let isWindowFocused = true;
-    let hasInitialContextAction = false;
-
-    // Check for context action on initialization
-    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-      if (response && response.action && response.selection) {
-        hasInitialContextAction = true;
-        console.log('Initial context action detected:', response.action);
-      }
     });
-
-    // Handle window focus changes
-    window.addEventListener('focus', () => {
-      isWindowFocused = true;
-      checkForSelection();
-    });
-
-    window.addEventListener('blur', () => {
-      isWindowFocused = false;
-    });
-
-    // Throttled selection check
-    const throttledCheck = throttle(checkForSelection, 1000);
-
-    // Selection change event listener
-    document.addEventListener('selectionchange', () => {
-      // For side panel mode, always allow monitoring regardless of focus
-      // For popup mode, allow only when focused OR has context action
-      if (isSidePanel || isWindowFocused || hasInitialContextAction) {
-        throttledCheck();
-      }
-    });
-
-    // Reduced interval for background checks
-    const selectionInterval = setInterval(() => {
-      // For side panel mode, always check for context actions regardless of focus
-      // For popup mode, check only when focused OR has context action
-      if (isSidePanel || isWindowFocused || hasInitialContextAction) {
-        checkForSelection();
-        
-        // For popup mode only: reset context action flag after some time to prevent indefinite monitoring
-        // But don't reset if we're in side panel mode
-        if (hasInitialContextAction && !isSidePanel) {
-          // Check if context action is still valid
-          chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-            if (!response || !response.action) {
-              setTimeout(() => {
-                hasInitialContextAction = false;
-                console.log('Context action flag reset for popup mode');
-              }, 5000); // Reset after 5 seconds if no more context actions
-            }
-          });
-        }
-      }
-    }, 2000); // Check every 2 seconds for better responsiveness
-
-    // Clean up when popup closes
-    window.addEventListener('unload', () => {
-      clearInterval(selectionInterval);
-    });
-  }
-
-  // Initialize selection monitoring
-  setupSelectionMonitoring();
-
-  // Handle summarize button click
-  document.getElementById('summarize-selection').addEventListener('click', handleSummarize);
-
-  // Handle translate button click
-  document.getElementById('translate-selection').addEventListener('click', handleTranslate);
-
-  // Function to handle summarization
-  async function handleSummarize() {
-    if (!currentSelection || isSendingMessage) return;
-    
-    isSendingMessage = true;
-    chatMessages.innerHTML = '';
-    
-    const displayMessage = '선택한 텍스트 요약';
-    const messageToSend = `다음 텍스트를 이해하기 쉽게 한국어로 요약해주세요:\n\n[텍스트] ${currentSelection} \n\n요약:`;
-    
-    addMessage(displayMessage, true);
-    
-    try {
-      await sendMessage(messageToSend);
-    } finally {
-      isSendingMessage = false;
-    }
-  }
-
-  // Function to handle translation
-  async function handleTranslate() {
-    if (!currentSelection || isSendingMessage) return;
-    
-    isSendingMessage = true;
-    chatMessages.innerHTML = '';
-    
-    const displayMessage = '선택한 텍스트 번역';
-    const messageToSend = `아래 텍스트를 한국어로 번역해주세요:\n\n[텍스트] ${currentSelection} \n\n번역:`;
-    
-    addMessage(displayMessage, true);
-    
-    try {
-      await sendMessage(messageToSend);
-    } finally {
-      isSendingMessage = false;
-    }
   }
 });
+
+// Load current language setting
+async function loadCurrentLanguage() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['lang'], (result) => {
+      currentLanguage = result.lang || 'ko';
+      resolve(currentLanguage);
+    });
+  });
+}
+
+// Show selection info
+function showSelectionInfo(text) {
+  if (selectionInfo && selectionPreview) {
+    currentSelection = text;
+    selectionPreview.textContent = text;
+    selectionInfo.classList.remove('hidden');
+  }
+}
+
+// Hide selection info
+function hideSelectionInfo() {
+  if (selectionInfo) {
+    selectionInfo.classList.add('hidden');
+    currentSelection = '';
+  }
+}
+
+// Add message to chat
+function addMessage(message, isUser = false) {
+  if (!chatMessages) return;
+  
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
+  messageDiv.innerHTML = marked.parse(message);
+  chatMessages.appendChild(messageDiv);
+
+  // Add timestamp (아래에 추가)
+  const timestampDiv = document.createElement('div');
+  timestampDiv.className = 'message-timestamp';
+  timestampDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  messageDiv.appendChild(timestampDiv);
+
+  // Apply syntax highlighting to code blocks
+  messageDiv.querySelectorAll('pre code').forEach((block) => {
+    hljs.highlightElement(block);
+  });
+
+  // Add click handlers for message selection headers
+  messageDiv.querySelectorAll('.message-selection-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const content = header.nextElementSibling;
+      const icon = header.querySelector('.message-selection-icon');
+      content.classList.toggle('collapsed');
+      icon.classList.toggle('collapsed');
+    });
+  });
+
+  // Scroll to bottom
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// Send message function (placeholder - should be implemented in LLMChatApp)
+async function sendMessage(message) {
+  if (window.llmChatApp) {
+    try {
+      // Let LLMChatApp handle all UI updates
+      await window.llmChatApp.sendMessage(message, true); // true = add to UI
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
+      addMessage(errorMessage, false);
+    }
+  }
+}
+
+// Send custom message with different display and actual content
+async function sendCustomMessage(displayMessage, actualMessage) {
+  if (window.llmChatApp) {
+    try {
+      // Add display message to UI first
+      addMessage(displayMessage, true);
+      
+      // Send to LLM with separate display and actual messages
+      // UI는 이미 추가되었으므로 conversation history와 LLM 처리만 필요
+      await window.llmChatApp.sendMessageRaw(displayMessage, actualMessage);
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
+      addMessage(errorMessage, false);
+    }
+  }
+}

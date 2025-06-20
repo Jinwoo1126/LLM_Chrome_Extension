@@ -1,0 +1,43 @@
+{
+  "name": "llm-chrome-extension",
+  "version": "2.0.0",
+  "description": "Chrome Extension for chatting with LLM through vLLM or Ollama APIs",
+  "main": "popup.js",
+  "type": "module",
+  "scripts": {
+    "dev": "echo 'Development mode - Load unpacked extension in Chrome'",
+    "build": "node scripts/build.js",
+    "lint": "eslint src/ --ext .js",
+    "lint:fix": "eslint src/ --ext .js --fix",
+    "test": "echo 'Tests not implemented yet'",
+    "docs": "jsdoc -c jsdoc.json",
+    "clean": "bash scripts/cleanup.sh",
+    "validate": "node scripts/validate.js",
+    "package": "node scripts/package.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "llm",
+    "ai",
+    "chat",
+    "vllm",
+    "ollama"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "jsdoc": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yourusername/llm-chrome-extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/llm-chrome-extension/issues"
+  },
+  "homepage": "https://github.com/yourusername/llm-chrome-extension#readme"
+}
