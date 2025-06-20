@@ -217,14 +217,6 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Initial check for context actions
   checkContextAction();
 
-  // Set up periodic check for context actions when panel is already open
-  const contextCheckInterval = setInterval(checkContextAction, 2000);
-
-  // Clean up interval when page unloads
-  window.addEventListener('beforeunload', () => {
-    clearInterval(contextCheckInterval);
-  });
-
   // Send button event listener
   if (sendButton) {
     sendButton.addEventListener('click', async function() {
