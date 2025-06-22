@@ -1,10 +1,10 @@
 // Selection management module
 // 
-// Smart Selection Detection Strategy:
+// Optimized Selection Detection Strategy:
 // 1. Event-based: Uses content script's 'selectionchange' events for real-time detection
-// 2. On-demand: Checks selection when user interacts (focus, click, send message)
-// 3. Fallback: Minimal polling (30 seconds) only for side panel as backup
-// 4. Efficient: Avoids constant polling, reduces resource usage
+// 2. Single unified method: getSelection() handles all selection sources
+// 3. Minimal caching: Reduces redundant calls
+// 4. Efficient: Streamlined logic, no polling
 // 
 import { APP_CONSTANTS, getLocalizedMessage } from '../constants/app-constants.js';
 import { ChromeUtils } from '../utils/chrome-utils.js';
@@ -17,177 +17,166 @@ export class SelectionManager {
     this.isSelectionStored = false;
     this.isSelectionMode = false;
     this.elements = {};
-    this.currentLanguage = 'ko';
     
-    // Throttled and debounced functions
-    this.debouncedCheckSelection = Utils.debounce(
-      this.checkForSelection.bind(this), 
-      APP_CONSTANTS.SELECTION_DEBOUNCE_DELAY
-    );
+    // Simple cache to avoid redundant calls
+    this.selectionCache = new Map();
+    this.CACHE_DURATION = 1000; // 1 second
+    
+    // Setup event system
+    this.setupEventSystem();
   }
 
   /**
-   * Initialize selection manager
+   * Initialize selection manager with DOM elements
+   * @param {Object} elements - DOM elements object
    */
   async initialize(elements) {
     this.elements = elements;
-    this.currentLanguage = await this.getCurrentLanguage();
     this.setupEventListeners();
-    this.setupSelectionMonitoring();
-  }
-
-  /**
-   * Get current language setting
-   */
-  async getCurrentLanguage() {
-    return new Promise((resolve) => {
-      chrome.storage.local.get(['lang'], (result) => {
-        resolve(result.lang || 'ko');
-      });
-    });
-  }
-
-  /**
-   * Setup event listeners
-   */
-  setupEventListeners() {
-    // Reset selection button
-    if (this.elements.resetSelectionButton) {
-      this.elements.resetSelectionButton.addEventListener('click', () => {
-        this.resetSelection();
-      });
-    }
-
-    // Summarize button
-    if (this.elements.summarizeButton) {
-      this.elements.summarizeButton.addEventListener('click', () => {
-        this.handleSummarize();
-      });
-    }
-
-    // Translate button
-    if (this.elements.translateButton) {
-      this.elements.translateButton.addEventListener('click', () => {
-        this.handleTranslate();
-      });
-    }
-
-    // Selection header toggle
-    if (this.elements.selectionHeader) {
-      this.elements.selectionHeader.addEventListener('click', () => {
-        this.toggleSelectionContent();
-      });
-    }
-
-    // Setup periodic selection monitoring
-    this.setupSelectionMonitoring();
-  }
-
-  /**
-   * Setup smart selection monitoring
-   * Uses event-based detection instead of constant polling
-   */
-  setupSelectionMonitoring() {
-    console.log('SelectionManager: Setting up smart selection monitoring...');
     
-    // Check if we're in side panel mode
-    const isSidePanel = window.location.search.includes('side_panel=true') || 
-                       document.body.classList.contains('side-panel-mode');
-    
-    if (isSidePanel) {
-      console.log('SelectionManager: Side panel detected - enabling event-based monitoring');
-      
-      // Only check for context actions once initially and when window gets focus
-      this.checkForSelection();
-      
-      // Check when window regains focus (user might have selected text in another tab)
-      window.addEventListener('focus', async () => {
-        console.log('SelectionManager: Window focused, checking for selection...');
-        await this.checkForSelection();
-        await this.checkForFreshSelection();
-      });
-      
-      // Optional: Very infrequent fallback check (every 30 seconds)
-      const fallbackInterval = setInterval(async () => {
-        await this.checkForFreshSelection();
-      }, 30000); // Only every 30 seconds as fallback
-      
-      window.addEventListener('beforeunload', () => {
-        clearInterval(fallbackInterval);
-      });
-      
-    } else {
-      console.log('SelectionManager: Popup mode - using on-demand selection detection');
-      
-      // For popup, only check on initialization and focus
-      this.checkForSelection();
-      
-      // Check when popup gets focus
-      window.addEventListener('focus', async () => {
-        console.log('SelectionManager: Popup focused, checking for selection...');
-        await this.checkForSelection();
-        await this.checkForFreshSelection();
-      });
-    }
-    
-    // Initial check with delay for proper initialization
+    // Initial selection check
     setTimeout(async () => {
-      try {
-        await this.checkForFreshSelection();
-      } catch (error) {
-        console.log('SelectionManager: Initial selection check failed:', error);
-      }
+      await this.getSelection();
     }, 500);
   }
 
   /**
-   * Check for fresh selection without constant polling
+   * Get current language setting
+   * @returns {Promise<string>} - Promise resolving to current language
    */
-  async checkForFreshSelection() {
+  async getCurrentLanguage() {
     try {
-      const directSelection = await this.getDirectSelection();
-      if (directSelection && directSelection.trim() && directSelection !== this.currentSelection) {
-        console.log('SelectionManager: Fresh selection detected:', directSelection);
-        this.updateSelection(directSelection);
-        return true;
-      }
-      return false;
+      const result = await ChromeUtils.getStorage(['lang']);
+      return result.lang || 'ko';
     } catch (error) {
-      console.log('SelectionManager: Could not check fresh selection:', error);
-      return false;
+      return 'ko';
     }
   }
 
   /**
-   * Check for selected text from various sources
-   * Checks context actions and logs for debugging
+   * Setup event listeners for UI elements
    */
-  async checkForSelection() {
-    try {
-      // Check for context actions (from right-click menu)
-      const contextAction = await this.checkForContextAction();
-      if (contextAction && contextAction.hasAction) {
-        console.log('SelectionManager: Context action detected:', contextAction);
-        return;
-      }
+  setupEventListeners() {
+    if (!this.elements.selectionHeader) return;
 
-      // For debugging: log when no context action is found
-      const isSidePanel = window.location.search.includes('side_panel=true') || 
-                         document.body.classList.contains('side-panel-mode');
-      if (isSidePanel) {
-        console.log('SelectionManager: No context action found in side panel mode');
+    // Toggle selection content visibility
+    this.elements.selectionHeader.addEventListener('click', () => {
+      this.toggleSelectionContent();
+    });
+  }
+
+  /**
+   * Setup event system for selection changes
+   */
+  setupEventSystem() {
+    // Listen for selection changes from content script
+    chrome.runtime.onMessage.addListener((message) => {
+      if (message.action === 'selectionChanged' && message.selectedText) {
+        console.log('SelectionManager: Received selection change event:', message.selectedText);
+        this.updateSelection(message.selectedText);
+        
+        // Dispatch custom event for other components
+        document.dispatchEvent(new CustomEvent('selection:updated', {
+          detail: { selection: message.selectedText }
+        }));
+      }
+    });
+
+    // Check for context actions on window focus
+    window.addEventListener('focus', async () => {
+      console.log('SelectionManager: Window focused, checking for selection...');
+      await this.getSelection(true); // Force refresh on focus
+    });
+  }
+
+  /**
+   * Unified method to get selection from all sources
+   * This replaces all the complex separate methods
+   * @param {boolean} forceRefresh - Force refresh bypassing cache
+   * @returns {Promise<string>} - Promise resolving to selected text
+   */
+  async getSelection(forceRefresh = false) {
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = this.getCachedSelection();
+      if (cached !== null) {
+        console.log('SelectionManager: Using cached selection:', cached);
+        return cached;
+      }
+    }
+
+    console.log('SelectionManager: Getting fresh selection...');
+
+    // 1. Check for context actions first (highest priority)
+    try {
+      const contextAction = await this.checkForContextAction();
+      if (contextAction?.hasAction && contextAction.selection) {
+        console.log('SelectionManager: Found context action selection:', contextAction.selection);
+        this.updateSelection(contextAction.selection);
+        this.setCachedSelection(contextAction.selection);
+        return contextAction.selection;
       }
     } catch (error) {
-      Utils.logError('SelectionManager.checkForSelection', error);
+      console.log('SelectionManager: Context action check failed:', error);
     }
+
+    // 2. Get direct selection from content script
+    try {
+      const directSelection = await ChromeUtils.getSelectedText();
+      if (directSelection?.trim()) {
+        console.log('SelectionManager: Found direct selection:', directSelection);
+        
+        // Update if different from current
+        if (directSelection !== this.currentSelection) {
+          this.updateSelection(directSelection);
+        }
+        
+        this.setCachedSelection(directSelection);
+        return directSelection;
+      }
+    } catch (error) {
+      console.log('SelectionManager: Direct selection failed:', error);
+    }
+
+    // 3. Return stored selection as fallback
+    const storedSelection = this.currentSelection || '';
+    console.log('SelectionManager: Using stored selection as fallback:', storedSelection);
+    this.setCachedSelection(storedSelection);
+    return storedSelection;
+  }
+
+  /**
+   * Get cached selection if available and not expired
+   * @returns {string|null} - Cached selection or null if not available/expired
+   */
+  getCachedSelection() {
+    const cached = this.selectionCache.get('current');
+    if (cached && (Date.now() - cached.timestamp) < this.CACHE_DURATION) {
+      return cached.value;
+    }
+    return null;
+  }
+
+  /**
+   * Set cached selection
+   * @param {string} selection - Selection to cache
+   */
+  setCachedSelection(selection) {
+    this.selectionCache.set('current', {
+      value: selection,
+      timestamp: Date.now()
+    });
   }
 
   /**
    * Check for context actions from background script
+   * @returns {Promise<Object>} - Promise resolving to context action result
    */
   async checkForContextAction() {
     try {
-      const response = await ChromeUtils.checkContextAction();
+      const response = await ChromeUtils.sendMessage({ 
+        action: APP_CONSTANTS.MESSAGE_TYPES.CHECK_CONTEXT_ACTION 
+      });
       
       if (response && response.hasAction) {
         const { action, selection } = response;
@@ -199,16 +188,16 @@ export class SelectionManager {
 
         this.updateSelection(selection);
         
-        // Handle specific actions
+        // Handle specific actions (simplified)
         switch (action) {
           case APP_CONSTANTS.ACTION_TYPES.SELECTION:
-            this.handleUseSelection();
+            console.log('SelectionManager: Selection action detected');
             break;
           case APP_CONSTANTS.ACTION_TYPES.SUMMARIZE:
-            await this.handleSummarize();
+            console.log('SelectionManager: Summarize action detected');
             break;
           case APP_CONSTANTS.ACTION_TYPES.TRANSLATE:
-            await this.handleTranslate();
+            console.log('SelectionManager: Translate action detected');
             break;
         }
 
@@ -286,36 +275,6 @@ export class SelectionManager {
   }
 
   /**
-   * Handle use selection
-   * NOTE: Disabled to prevent duplicate calls. popup.js handles button clicks directly.
-   */
-  async handleUseSelection() {
-    // Disabled - popup.js handles this directly to avoid duplicate calls
-    console.log('SelectionManager.handleUseSelection - disabled to prevent duplicate calls');
-    return;
-  }
-
-  /**
-   * Handle summarization
-   * NOTE: Disabled to prevent duplicate calls. popup.js handles button clicks directly.
-   */
-  async handleSummarize() {
-    // Disabled - popup.js handles this directly to avoid duplicate calls
-    console.log('SelectionManager.handleSummarize - disabled to prevent duplicate calls');
-    return;
-  }
-
-  /**
-   * Handle translation
-   * NOTE: Disabled to prevent duplicate calls. popup.js handles button clicks directly.
-   */
-  async handleTranslate() {
-    // Disabled - popup.js handles this directly to avoid duplicate calls
-    console.log('SelectionManager.handleTranslate - disabled to prevent duplicate calls');
-    return;
-  }
-
-  /**
    * Reset selection state
    */
   async resetSelection() {
@@ -323,6 +282,7 @@ export class SelectionManager {
       this.currentSelection = '';
       this.isSelectionStored = false;
       this.isSelectionMode = false;
+      this.selectionCache.clear();
 
       // Clear selection in content script
       await ChromeUtils.clearSelection();
@@ -375,80 +335,11 @@ export class SelectionManager {
   }
 
   /**
-   * Get selected text directly from background or content script
-   * @returns {Promise<string>} - Promise resolving to selected text
-   */
-  async getDirectSelection() {
-    try {
-      const response = await ChromeUtils.getSelectedText();
-      return response || '';
-    } catch (error) {
-      Utils.logError('SelectionManager.getDirectSelection', error);
-      return '';
-    }
-  }
-
-  /**
-   * Get current selection (enhanced to check multiple sources)
+   * Get current selection (simple getter)
    * @returns {string} - Current selection text
    */
   getCurrentSelection() {
     return this.currentSelection;
-  }
-
-  /**
-   * Get current selection with fallback to direct selection
-   * Always checks for fresh selection to avoid stale data
-   * @returns {Promise<string>} - Promise resolving to current selection text
-   */
-  async getCurrentSelectionWithFallback() {
-    console.log('SelectionManager: Getting selection with fallback...');
-    
-    // First try to get fresh direct selection
-    try {
-      const directSelection = await this.getDirectSelection();
-      if (directSelection && directSelection.trim()) {
-        console.log('SelectionManager: Found fresh direct selection:', directSelection);
-        
-        // Compare with stored selection
-        if (directSelection !== this.currentSelection) {
-          console.log('SelectionManager: Selection changed, updating...');
-          this.updateSelection(directSelection);
-        }
-        
-        return directSelection;
-      }
-    } catch (error) {
-      console.log('SelectionManager: Could not get direct selection:', error);
-    }
-    
-    // Fallback to stored selection
-    if (this.currentSelection && this.currentSelection.trim()) {
-      console.log('SelectionManager: Using stored selection as fallback:', this.currentSelection);
-      return this.currentSelection;
-    }
-    
-    console.log('SelectionManager: No selection found');
-    return '';
-  }
-
-  /**
-   * Force refresh selection from active tab
-   * @returns {Promise<string>} - Promise resolving to refreshed selection
-   */
-  async refreshSelection() {
-    try {
-      console.log('SelectionManager: Forcing selection refresh...');
-      const directSelection = await this.getDirectSelection();
-      if (directSelection) {
-        this.updateSelection(directSelection);
-        console.log('SelectionManager: Selection refreshed:', directSelection);
-      }
-      return directSelection || '';
-    } catch (error) {
-      Utils.logError('SelectionManager.refreshSelection', error);
-      return '';
-    }
   }
 
   /**
@@ -493,20 +384,9 @@ export class SelectionManager {
   /**
    * Validate selection text
    * @param {string} text - Text to validate
-   * @returns {Object} - Validation result
+   * @returns {boolean} - True if valid
    */
   validateSelection(text) {
-    const trimmed = text.trim();
-    const wordCount = trimmed.split(/\s+/).length;
-    const charCount = trimmed.length;
-
-    return {
-      isValid: charCount > 0,
-      isEmpty: charCount === 0,
-      isTooLong: charCount > 10000, // Arbitrary limit
-      wordCount,
-      charCount,
-      warnings: []
-    };
+    return text && typeof text === 'string' && text.trim().length > 0;
   }
 }

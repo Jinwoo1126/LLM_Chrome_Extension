@@ -194,105 +194,48 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
 
-  // Check for context actions and direct selection
-  async function checkForSelectionFromMultipleSources() {
-    console.log('Popup: Checking for selection from multiple sources...');
+  // Simplified selection check using the unified SelectionManager
+  async function checkForSelection() {
+    console.log('Popup: Checking for selection...');
     
-    // Method 1: Check for context actions
     try {
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'checkContextAction' }, resolve);
-      });
-      
-      if (response && response.hasAction && response.selection) {
-        console.log('Popup: Found context action selection:', response.selection);
-        showSelectionInfo(response.selection);
-        return response.selection;
+      if (window.llmChatApp?.selectionManager) {
+        const selection = await window.llmChatApp.selectionManager.getSelection();
+        if (selection && selection.trim()) {
+          console.log('Popup: Found selection:', selection);
+          showSelectionInfo(selection);
+          return selection;
+        } else {
+          console.log('Popup: No selection found');
+        }
       }
     } catch (error) {
-      console.log('Popup: Context action check failed:', error);
+      console.log('Popup: Error checking for selection:', error);
     }
-    
-    // Method 2: Check for direct selection
-    try {
-      const response = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ action: 'getSelectedText' }, resolve);
-      });
-      
-      if (response && response.selectedText && response.selectedText.trim()) {
-        console.log('Popup: Found direct selection:', response.selectedText);
-        showSelectionInfo(response.selectedText);
-        return response.selectedText;
-      }
-    } catch (error) {
-      console.log('Popup: Direct selection check failed:', error);
-    }
-    
-    console.log('Popup: No selection found from any source');
     return '';
   }
 
-  // Check for context actions (right-click menu actions)  
-  function checkContextAction() {
-    chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-      if (response && response.hasAction) {
-        console.log('Context action detected:', response.action);
-        
-        if (response.selection) {
-          showSelectionInfo(response.selection);
-          
-          // Handle specific actions directly without clicking buttons to avoid duplicate calls
-          if (response.action === 'summarize') {
-            setTimeout(() => {
-              if (currentSelection) {
-                const prompt = getLocalizedMessage('SUMMARIZATION_PROMPT', currentLanguage) + currentSelection;
-                sendCustomMessage('📝 요약 요청', prompt);
-              }
-            }, 500);
-          } else if (response.action === 'translate') {
-            setTimeout(() => {
-              if (currentSelection) {
-                const prompt = getLocalizedMessage('TRANSLATION_PROMPT', currentLanguage) + currentSelection;
-                sendCustomMessage('🌐 번역 요청', prompt);
-              }
-            }, 500);
-          }
-        }
-      }
-    });
-  }
-
+  // Simplified context action check - now handled by SelectionManager
   // Initial check for context actions
-  // Enhanced initialization - check for selections from multiple sources
-  checkContextAction();
+  checkForSelection();
   
-  // Smart selection detection - only when needed
+  // Simplified event-based selection detection
   // Check when popup regains focus (user might have selected text)
   window.addEventListener('focus', async () => {
     console.log('Popup: Window focused, checking for new selection...');
-    const newSelection = await checkForSelectionFromMultipleSources();
-    if (newSelection && newSelection !== currentSelection) {
-      console.log('Popup: Selection changed from', currentSelection, 'to', newSelection);
-      currentSelection = newSelection;
-    }
+    await checkForSelection();
   });
   
-  // Check when user clicks anywhere in the popup (might indicate intent to use selection)
-  document.addEventListener('click', async (e) => {
-    // Only check if clicking near input area or send button
-    if (e.target.closest('#user-input') || e.target.closest('#send-button')) {
-      const newSelection = await checkForSelectionFromMultipleSources();
-      if (newSelection && newSelection !== currentSelection) {
-        console.log('Popup: New selection detected on interaction:', newSelection);
-        currentSelection = newSelection;
-      }
-    }
-  });
-  
-  // Initial comprehensive check
+  // Initial check
   setTimeout(async () => {
-    await checkForSelectionFromMultipleSources();
+    await checkForSelection();
   }, 500);
+
+  // Listen for selection events from SelectionManager
+  document.addEventListener('selection:updated', (event) => {
+    console.log('Popup: Received selection update event:', event.detail.selection);
+    showSelectionInfo(event.detail.selection);
+  });
 
   // Send button event listener
   if (sendButton) {

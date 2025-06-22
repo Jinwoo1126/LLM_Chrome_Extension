@@ -1,7 +1,7 @@
-// Content script to collect page information
+// Content script for LLM Chrome Extension
 console.log('Content script loaded');
 
-// Function to get selection from all frames
+// Optimized function to get selection from all frames
 function getAllSelections() {
   let selections = [];
   
@@ -11,7 +11,7 @@ function getAllSelections() {
     selections.push(mainSelection);
   }
   
-  // Get selections from all iframes
+  // Get selections from all iframes (with error handling)
   const iframes = document.getElementsByTagName('iframe');
   for (let iframe of iframes) {
     try {
@@ -21,124 +21,116 @@ function getAllSelections() {
         selections.push(iframeSelection);
       }
     } catch (e) {
-      console.log('Cannot access iframe content:', e);
+      // Silently ignore iframe access errors (CORS, etc.)
     }
   }
   
   return selections.join('\n\n');
 }
 
-// Function to extract page content
+// Optimized page content extraction
 function extractPageContent() {
-  // Get page title
-  const title = document.title;
-  
-  // Get meta description
-  let description = '';
-  const metaDesc = document.querySelector('meta[name="description"]');
-  if (metaDesc) {
-    description = metaDesc.getAttribute('content');
-  }
-  
-  // Get URL
-  const url = window.location.href;
-  
-  // Get selected text from all frames
-  const selectedText = getAllSelections();
-  
-  // Extract main content (basic implementation)
-  // Gets text from article, main, or body elements
-  let mainContent = '';
-  const contentElements = document.querySelector('article') || 
-                          document.querySelector('main') || 
-                          document.body;
-  
-  if (contentElements) {
-    // Get text content but limit it to avoid excessive data
-    mainContent = contentElements.textContent.trim().substring(0, 5000);
-    // Remove excessive whitespace
-    mainContent = mainContent.replace(/\s+/g, ' ');
-  }
+  const selection = getAllSelections();
   
   return {
-    title,
-    url,
-    description,
-    selectedText,
-    mainContent,
-    hasSelection: selectedText.length > 0
+    title: document.title || '',
+    url: window.location.href || '',
+    description: document.querySelector('meta[name="description"]')?.content || '',
+    selectedText: selection,
+    mainContent: document.body?.innerText?.substring(0, 5000) || '', // Limit to 5000 chars
+    hasSelection: Boolean(selection)
   };
 }
 
-// Keep track of the current selection
+// Optimized selection tracking
 let currentSelection = '';
 let lastNotifiedSelection = '';
-
-// Debounced selection change handler to avoid excessive messages
 let selectionChangeTimeout;
 
-// Monitor text selection changes with smart debouncing
+// Optimized selection change handler with smart debouncing
 document.addEventListener('selectionchange', function() {
   // Clear previous timeout
   if (selectionChangeTimeout) {
     clearTimeout(selectionChangeTimeout);
   }
   
-  // Debounce selection changes to avoid excessive calls
+  // Debounce selection changes (300ms delay)
   selectionChangeTimeout = setTimeout(() => {
     const newSelection = getAllSelections();
     
-    // Only notify if selection actually changed
-    if (newSelection !== lastNotifiedSelection) {
+    // Only notify if selection actually changed and is not empty
+    if (newSelection !== lastNotifiedSelection && newSelection.trim()) {
       currentSelection = newSelection;
       lastNotifiedSelection = newSelection;
       
-      // Only send message if there's actual selection
-      if (newSelection && newSelection.trim()) {
-        console.log('Content script: Selection changed, notifying extension');
-        chrome.runtime.sendMessage({ 
-          action: 'selectionChanged', 
-          selectedText: newSelection 
-        });
-      }
+      console.log('Content script: Selection changed, notifying background');
+      
+      // Send message to background script
+      chrome.runtime.sendMessage({ 
+        action: 'selectionChanged', 
+        selectedText: newSelection 
+      }).catch(error => {
+        console.log('Could not send selection change message:', error.message);
+      });
     }
-  }, 300); // Wait 300ms before processing selection change
+  }, 300);
 });
 
-// Listen for messages from the extension
+// Optimized message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Message received in content script:', message);
+  console.log('Content script: Message received:', message.action);
   
-  if (message.action === 'getPageInfo') {
-    const pageInfo = extractPageContent();
-    sendResponse(pageInfo);
-    return true; // Required for async response
-  }
-  
-  if (message.action === 'getSelectedText') {
-    // Force a fresh check of the selection
-    const selection = getAllSelections();
-    sendResponse({ selectedText: selection || currentSelection });
-    return true;
-  }
-
-  if (message.action === 'clearSelection') {
-    // Clear the current selection
-    window.getSelection().removeAllRanges();
-    // Try to clear selections in iframes
-    const iframes = document.getElementsByTagName('iframe');
-    for (let iframe of iframes) {
+  switch (message.action) {
+    case 'getPageInfo':
+      sendResponse(extractPageContent());
+      break;
+      
+    case 'getSelectedText':
+      // Force fresh check and respond
+      const selection = getAllSelections();
+      sendResponse({ selectedText: selection || currentSelection });
+      break;
+      
+    case 'clearSelection':
+      // Clear selections in all frames
       try {
-        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-        iframeDoc.getSelection().removeAllRanges();
-      } catch (e) {
-        console.log('Cannot access iframe content:', e);
+        window.getSelection().removeAllRanges();
+        
+        // Clear iframe selections
+        const iframes = document.getElementsByTagName('iframe');
+        for (let iframe of iframes) {
+          try {
+            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+            iframeDoc.getSelection().removeAllRanges();
+          } catch (e) {
+            // Silently ignore iframe access errors
+          }
+        }
+        
+        // Reset internal state
+        currentSelection = '';
+        lastNotifiedSelection = '';
+        
+        sendResponse({ success: true });
+      } catch (error) {
+        console.log('Error clearing selection:', error);
+        sendResponse({ success: false, error: error.message });
       }
-    }
-    sendResponse({ success: true });
-    return true;
+      break;
+      
+    default:
+      console.log('Content script: Unknown action:', message.action);
   }
+  
+  return true; // Required for async response
 });
 
-// Notify that the content script is ready
-chrome.runtime.sendMessage({ action: 'contentScriptReady' });
+// Notify background script that content script is ready
+chrome.runtime.sendMessage({ 
+  action: 'contentScriptReady',
+  url: window.location.href 
+}).catch(error => {
+  console.log('Could not send ready message:', error.message);
+});
+
+console.log('Content script setup complete');

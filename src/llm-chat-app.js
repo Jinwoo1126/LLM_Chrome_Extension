@@ -111,68 +111,6 @@ export class LLMChatApp {
   }
 
   /**
-   * Get selection from multiple sources with comprehensive fallback
-   * Always checks for fresh selection to avoid stale data
-   * @returns {Promise<string>} - Promise resolving to selected text
-   */
-  async getSelectionFromMultipleSources() {
-    console.log('--- Getting selection from multiple sources ---');
-    
-    // Method 1: Try context action selection first (most recent)
-    try {
-      const contextAction = await this.selectionManager.checkForContextAction();
-      if (contextAction && contextAction.hasAction && contextAction.selection) {
-        console.log('Found context action selection:', contextAction.selection);
-        // Update stored selection to keep it fresh
-        this.selectionManager.updateSelection(contextAction.selection);
-        return contextAction.selection;
-      }
-    } catch (error) {
-      console.log('Context action check failed:', error);
-    }
-    
-    // Method 2: Try direct selection from content script (fresh selection)
-    try {
-      const directSelection = await this.selectionManager.getDirectSelection();
-      if (directSelection && directSelection.trim()) {
-        console.log('Found direct selection:', directSelection);
-        
-        // Compare with stored selection to see if it's different
-        const storedSelection = this.selectionManager.getCurrentSelection();
-        if (directSelection !== storedSelection) {
-          console.log('New selection detected, updating stored selection');
-          this.selectionManager.updateSelection(directSelection);
-        }
-        
-        return directSelection;
-      }
-    } catch (error) {
-      console.log('Direct selection failed:', error);
-    }
-    
-    // Method 3: Try stored selection (fallback)
-    const storedSelection = this.selectionManager.getCurrentSelection();
-    if (storedSelection && storedSelection.trim()) {
-      console.log('Using stored selection as fallback:', storedSelection);
-      return storedSelection;
-    }
-    
-    // Method 4: Try refresh selection (last resort)
-    try {
-      const refreshedSelection = await this.selectionManager.refreshSelection();
-      if (refreshedSelection && refreshedSelection.trim()) {
-        console.log('Found refreshed selection:', refreshedSelection);
-        return refreshedSelection;
-      }
-    } catch (error) {
-      console.log('Selection refresh failed:', error);
-    }
-    
-    console.log('No selection found from any source');
-    return '';
-  }
-
-  /**
    * Handle send message event
    */
   async handleSendMessage(event) {
@@ -188,7 +126,7 @@ export class LLMChatApp {
 
       // Get the most current selection (this will automatically refresh if needed)
       console.log('Getting current selection for message...');
-      const currentSelection = await this.getSelectionFromMultipleSources();
+      const currentSelection = await this.selectionManager.getSelection();
       console.log('Current selection:', currentSelection);
       
       // Add user message to conversation and UI (without system prompt)
@@ -225,7 +163,7 @@ export class LLMChatApp {
       this.isSendingMessage = true;
       this.uiManager.setSendButtonState(false);
 
-      const currentSelection = await this.getSelectionFromMultipleSources();
+      const currentSelection = await this.selectionManager.getSelection();
       
       // Add user message to conversation and optionally to UI
       this.conversationManager.addMessage(message, true, currentSelection);
@@ -264,7 +202,7 @@ export class LLMChatApp {
       this.isSendingMessage = true;
       this.uiManager.setSendButtonState(false);
 
-      const currentSelection = await this.getSelectionFromMultipleSources();
+      const currentSelection = await this.selectionManager.getSelection();
       
       // Add display message to conversation history (not the full prompt)
       // UI는 caller에서 이미 추가되었으므로 여기서는 conversation history에만 추가
