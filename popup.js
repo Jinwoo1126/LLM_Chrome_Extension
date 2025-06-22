@@ -2,14 +2,14 @@
 import { LLMChatApp } from './src/llm-chat-app.js';
 import { getLocalizedMessage } from './src/constants/app-constants.js';
 
-// Global variables
-let chatMessages, userInput, sendButton, isSendingMessage = false;
-let isSelectionStored = false, currentSelection = '';
-let selectionInfo, selectionPreview;
-let currentLanguage = 'ko';
-
 // Initialize application when DOM is loaded
 document.addEventListener('DOMContentLoaded', async function() {
+  // Global variables
+  let chatMessages, userInput, sendButton, isSendingMessage = false;
+  let isSelectionStored = false, currentSelection = '';
+  let selectionInfo, selectionPreview;
+  let currentLanguage = 'ko';
+
   console.log('LLM Chat Extension loading...');
   
   // Initialize global variables
@@ -21,6 +21,15 @@ document.addEventListener('DOMContentLoaded', async function() {
   
   // Load current language setting
   await loadCurrentLanguage();
+
+  async function loadCurrentLanguage() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(['lang'], (result) => {
+        currentLanguage = result.lang || 'ko';
+        resolve(currentLanguage);
+      });
+    });
+  }
   
   try {
     // Create and initialize the main application
@@ -154,6 +163,7 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Listen for messages from content script and background script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'selectionChanged' && message.selectedText) {
+      console.log('Popup: Received selection change event:', message.selectedText);
       showSelectionInfo(message.selectedText);
     }
     
@@ -184,10 +194,48 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
   });
 
-  // Check for context actions (right-click menu actions)
+  // Check for context actions and direct selection
+  async function checkForSelectionFromMultipleSources() {
+    console.log('Popup: Checking for selection from multiple sources...');
+    
+    // Method 1: Check for context actions
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'checkContextAction' }, resolve);
+      });
+      
+      if (response && response.hasAction && response.selection) {
+        console.log('Popup: Found context action selection:', response.selection);
+        showSelectionInfo(response.selection);
+        return response.selection;
+      }
+    } catch (error) {
+      console.log('Popup: Context action check failed:', error);
+    }
+    
+    // Method 2: Check for direct selection
+    try {
+      const response = await new Promise((resolve) => {
+        chrome.runtime.sendMessage({ action: 'getSelectedText' }, resolve);
+      });
+      
+      if (response && response.selectedText && response.selectedText.trim()) {
+        console.log('Popup: Found direct selection:', response.selectedText);
+        showSelectionInfo(response.selectedText);
+        return response.selectedText;
+      }
+    } catch (error) {
+      console.log('Popup: Direct selection check failed:', error);
+    }
+    
+    console.log('Popup: No selection found from any source');
+    return '';
+  }
+
+  // Check for context actions (right-click menu actions)  
   function checkContextAction() {
     chrome.runtime.sendMessage({ action: 'checkContextAction' }, (response) => {
-      if (response && response.action) {
+      if (response && response.hasAction) {
         console.log('Context action detected:', response.action);
         
         if (response.selection) {
@@ -215,7 +263,36 @@ document.addEventListener('DOMContentLoaded', async function() {
   }
 
   // Initial check for context actions
+  // Enhanced initialization - check for selections from multiple sources
   checkContextAction();
+  
+  // Smart selection detection - only when needed
+  // Check when popup regains focus (user might have selected text)
+  window.addEventListener('focus', async () => {
+    console.log('Popup: Window focused, checking for new selection...');
+    const newSelection = await checkForSelectionFromMultipleSources();
+    if (newSelection && newSelection !== currentSelection) {
+      console.log('Popup: Selection changed from', currentSelection, 'to', newSelection);
+      currentSelection = newSelection;
+    }
+  });
+  
+  // Check when user clicks anywhere in the popup (might indicate intent to use selection)
+  document.addEventListener('click', async (e) => {
+    // Only check if clicking near input area or send button
+    if (e.target.closest('#user-input') || e.target.closest('#send-button')) {
+      const newSelection = await checkForSelectionFromMultipleSources();
+      if (newSelection && newSelection !== currentSelection) {
+        console.log('Popup: New selection detected on interaction:', newSelection);
+        currentSelection = newSelection;
+      }
+    }
+  });
+  
+  // Initial comprehensive check
+  setTimeout(async () => {
+    await checkForSelectionFromMultipleSources();
+  }, 500);
 
   // Send button event listener
   if (sendButton) {
@@ -278,97 +355,98 @@ document.addEventListener('DOMContentLoaded', async function() {
       }
     });
   }
-});
 
-// Load current language setting
-async function loadCurrentLanguage() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['lang'], (result) => {
-      currentLanguage = result.lang || 'ko';
-      resolve(currentLanguage);
-    });
-  });
-}
-
-// Show selection info
-function showSelectionInfo(text) {
-  if (selectionInfo && selectionPreview) {
-    currentSelection = text;
-    selectionPreview.textContent = text;
-    selectionInfo.classList.remove('hidden');
-  }
-}
-
-// Hide selection info
-function hideSelectionInfo() {
-  if (selectionInfo) {
-    selectionInfo.classList.add('hidden');
-    currentSelection = '';
-  }
-}
-
-// Add message to chat
-function addMessage(message, isUser = false) {
-  if (!chatMessages) return;
-  
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
-  messageDiv.innerHTML = marked.parse(message);
-  chatMessages.appendChild(messageDiv);
-
-  // Add timestamp (아래에 추가)
-  const timestampDiv = document.createElement('div');
-  timestampDiv.className = 'message-timestamp';
-  timestampDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  messageDiv.appendChild(timestampDiv);
-
-  // Apply syntax highlighting to code blocks
-  messageDiv.querySelectorAll('pre code').forEach((block) => {
-    hljs.highlightElement(block);
-  });
-
-  // Add click handlers for message selection headers
-  messageDiv.querySelectorAll('.message-selection-header').forEach(header => {
-    header.addEventListener('click', () => {
-      const content = header.nextElementSibling;
-      const icon = header.querySelector('.message-selection-icon');
-      content.classList.toggle('collapsed');
-      icon.classList.toggle('collapsed');
-    });
-  });
-
-  // Scroll to bottom
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
-// Send message function (placeholder - should be implemented in LLMChatApp)
-async function sendMessage(message) {
-  if (window.llmChatApp) {
-    try {
-      // Let LLMChatApp handle all UI updates
-      await window.llmChatApp.sendMessage(message, true); // true = add to UI
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
-      addMessage(errorMessage, false);
-    }
-  }
-}
-
-// Send custom message with different display and actual content
-async function sendCustomMessage(displayMessage, actualMessage) {
-  if (window.llmChatApp) {
-    try {
-      // Add display message to UI first
-      addMessage(displayMessage, true);
+  // Show selection info
+  function showSelectionInfo(text) {
+    if (selectionInfo && selectionPreview) {
+      const trimmedText = text.trim();
       
-      // Send to LLM with separate display and actual messages
-      // UI는 이미 추가되었으므로 conversation history와 LLM 처리만 필요
-      await window.llmChatApp.sendMessageRaw(displayMessage, actualMessage);
-    } catch (error) {
-      console.error('Failed to send message:', error);
-      const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
-      addMessage(errorMessage, false);
+      // Only update if selection has actually changed
+      if (trimmedText !== currentSelection) {
+        console.log('Popup: Updating selection display from', currentSelection, 'to', trimmedText);
+        currentSelection = trimmedText;
+        selectionPreview.textContent = trimmedText;
+        
+        if (trimmedText) {
+          selectionInfo.classList.remove('hidden');
+        } else {
+          selectionInfo.classList.add('hidden');
+        }
+      }
     }
   }
-}
+
+  // Hide selection info
+  function hideSelectionInfo() {
+    if (selectionInfo) {
+      selectionInfo.classList.add('hidden');
+      currentSelection = '';
+    }
+  }
+
+  // Add message to chat
+  function addMessage(message, isUser = false) {
+    if (!chatMessages) return;
+    
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${isUser ? 'user-message' : 'assistant-message'}`;
+    messageDiv.innerHTML = marked.parse(message);
+    chatMessages.appendChild(messageDiv);
+
+    // Add timestamp (아래에 추가)
+    const timestampDiv = document.createElement('div');
+    timestampDiv.className = 'message-timestamp';
+    timestampDiv.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    messageDiv.appendChild(timestampDiv);
+
+    // Apply syntax highlighting to code blocks
+    messageDiv.querySelectorAll('pre code').forEach((block) => {
+      hljs.highlightElement(block);
+    });
+
+    // Add click handlers for message selection headers
+    messageDiv.querySelectorAll('.message-selection-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const content = header.nextElementSibling;
+        const icon = header.querySelector('.message-selection-icon');
+        content.classList.toggle('collapsed');
+        icon.classList.toggle('collapsed');
+      });
+    });
+
+    // Scroll to bottom
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  // Send message function (placeholder - should be implemented in LLMChatApp)
+  async function sendMessage(message) {
+    if (window.llmChatApp) {
+      try {
+        // Let LLMChatApp handle all UI updates
+        await window.llmChatApp.sendMessage(message, true); // true = add to UI
+      } catch (error) {
+        console.error('Failed to send message:', error);
+        const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
+        addMessage(errorMessage, false);
+      }
+    }
+  }
+
+  // Send custom message with different display and actual content
+  async function sendCustomMessage(displayMessage, actualMessage) {
+    if (window.llmChatApp) {
+      try {
+        // Add display message to UI first
+        addMessage(displayMessage, true);
+        
+        // Send to LLM with separate display and actual messages
+        // UI는 이미 추가되었으므로 conversation history와 LLM 처리만 필요
+        await window.llmChatApp.sendMessageRaw(displayMessage, actualMessage);
+      } catch (error) {
+        console.error('Failed to send message:', error);
+        const errorMessage = getLocalizedMessage('ERROR_SENDING_MESSAGE', currentLanguage);
+        addMessage(errorMessage, false);
+      }
+    }
+  }
+});

@@ -24,9 +24,7 @@
     "tabs",
     "contextMenus",
     "windows",
-    "sidePanel",
-    "http://localhost/*",
-    "http://127.0.0.1:11434"
+    "sidePanel"
   ],
   "web_accessible_resources": [
     {
@@ -47,10 +45,6 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"]
     }
-  ],
-  "host_permissions": [
-    "http://localhost/*",
-    "http://127.0.0.1:11434"
   ],
   "background": {
     "service_worker": "background.js"

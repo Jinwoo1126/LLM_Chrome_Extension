@@ -72,18 +72,37 @@ function extractPageContent() {
 
 // Keep track of the current selection
 let currentSelection = '';
+let lastNotifiedSelection = '';
 
-// Monitor text selection changes
+// Debounced selection change handler to avoid excessive messages
+let selectionChangeTimeout;
+
+// Monitor text selection changes with smart debouncing
 document.addEventListener('selectionchange', function() {
-  currentSelection = getAllSelections();
-  
-  // Notify the extension about the selection change
-  if (currentSelection) {
-    chrome.runtime.sendMessage({ 
-      action: 'selectionChanged', 
-      selectedText: currentSelection 
-    });
+  // Clear previous timeout
+  if (selectionChangeTimeout) {
+    clearTimeout(selectionChangeTimeout);
   }
+  
+  // Debounce selection changes to avoid excessive calls
+  selectionChangeTimeout = setTimeout(() => {
+    const newSelection = getAllSelections();
+    
+    // Only notify if selection actually changed
+    if (newSelection !== lastNotifiedSelection) {
+      currentSelection = newSelection;
+      lastNotifiedSelection = newSelection;
+      
+      // Only send message if there's actual selection
+      if (newSelection && newSelection.trim()) {
+        console.log('Content script: Selection changed, notifying extension');
+        chrome.runtime.sendMessage({ 
+          action: 'selectionChanged', 
+          selectedText: newSelection 
+        });
+      }
+    }
+  }, 300); // Wait 300ms before processing selection change
 });
 
 // Listen for messages from the extension

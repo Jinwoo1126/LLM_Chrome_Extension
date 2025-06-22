@@ -275,6 +275,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (result.contextAction && !result.actionProcessed) {
         // Send back the context action and mark it as processed
         sendResponse({ 
+          hasAction: true,
           action: result.contextAction,
           selection: result.contextSelection || currentSelection 
         });
@@ -287,7 +288,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           chrome.storage.local.remove(['contextAction', 'contextSelection', 'actionProcessed']);
         }, 1000); // Give enough time for the action to be processed
       } else {
-        sendResponse({ action: null });
+        sendResponse({ 
+          hasAction: false,
+          action: null,
+          selection: ''
+        });
       }
     });
     return true;
