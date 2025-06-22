@@ -82,9 +82,16 @@ export class SelectionManager {
       }
     });
 
-    // Check for context actions on window focus
+    // Check for context actions on window focus (but not if just reset)
     window.addEventListener('focus', async () => {
       console.log('SelectionManager: Window focused, checking for selection...');
+      
+      // Don't fetch selection if we just reset it
+      if (!this.currentSelection && this.selectionCache.get('justReset')) {
+        console.log('SelectionManager: Skipping selection check - just reset');
+        return;
+      }
+      
       await this.getSelection(true); // Force refresh on focus
     });
   }
@@ -96,6 +103,12 @@ export class SelectionManager {
    * @returns {Promise<string>} - Promise resolving to selected text
    */
   async getSelection(forceRefresh = false) {
+    // Check if we just reset - if so, return empty string
+    if (this.selectionCache.get('justReset')) {
+      console.log('SelectionManager: Just reset, returning empty selection');
+      return '';
+    }
+    
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
       const cached = this.getCachedSelection();
@@ -279,33 +292,62 @@ export class SelectionManager {
    */
   async resetSelection() {
     try {
+      console.log('SelectionManager: Starting complete selection reset...');
+      
+      // Set reset flag to prevent immediate re-fetching
+      this.selectionCache.set('justReset', { value: true, timestamp: Date.now() });
+      
+      // Clear all internal state
       this.currentSelection = '';
       this.isSelectionStored = false;
       this.isSelectionMode = false;
       this.selectionCache.clear();
+      
+      // Re-set the reset flag after clearing cache
+      this.selectionCache.set('justReset', { value: true, timestamp: Date.now() });
 
-      // Clear selection in content script
+      // Clear selection in content script and background
       await ChromeUtils.clearSelection();
 
-      // Clear storage
+      // Clear all related storage
       await ChromeUtils.removeStorage([
         APP_CONSTANTS.STORAGE_KEYS.CONTEXT_ACTION,
         APP_CONSTANTS.STORAGE_KEYS.CONTEXT_SELECTION,
-        APP_CONSTANTS.STORAGE_KEYS.ACTION_PROCESSED
+        APP_CONSTANTS.STORAGE_KEYS.ACTION_PROCESSED,
+        'activeTabId' // Also clear activeTabId to prevent stale references
       ]);
 
-      // Update UI
+      // Update UI completely
       DOMUtils.hideElement(this.elements.selectionInfo);
       DOMUtils.removeClass(this.elements.useSelectionButton, APP_CONSTANTS.CSS_CLASSES.SELECTION_STORED);
+      
+      // Clear selection preview text
+      if (this.elements.selectionPreview) {
+        DOMUtils.setContent(this.elements.selectionPreview, '');
+        this.elements.selectionPreview.removeAttribute('title');
+      }
 
-      // Dispatch event
+      // Dispatch reset event
       this.dispatchSelectionEvent('selectionReset', {
         selection: '',
         isStored: false
       });
+      
+      // Clear the reset flag after a delay to allow normal operation to resume
+      setTimeout(() => {
+        this.selectionCache.delete('justReset');
+        console.log('SelectionManager: Reset flag cleared, normal operation resumed');
+      }, 2000);
+
+      console.log('SelectionManager: Complete selection reset finished');
 
     } catch (error) {
       Utils.logError('SelectionManager.resetSelection', error);
+      // Even if there's an error, ensure internal state is cleared
+      this.currentSelection = '';
+      this.isSelectionStored = false;
+      this.isSelectionMode = false;
+      this.selectionCache.clear();
     }
   }
 

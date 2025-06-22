@@ -1,4 +1,4 @@
-// Background script for LLM Chrome Extension
+// Background script for LLM Chrome Extension - Optimized Version
 console.log('Background script loaded');
 
 // Optimized storage for page information and selection
@@ -240,21 +240,39 @@ async function handleGetSelectedText(sendResponse) {
 // Handler for clearSelection
 async function handleClearSelection(sendResponse) {
   try {
+    console.log('Background: Starting complete selection clear...');
+    
+    // Clear background selection
     currentSelection = '';
+    
+    // Clear all selection-related storage
+    await chrome.storage.local.remove([
+      'contextAction',
+      'contextSelection', 
+      'actionProcessed',
+      'activeTabId'
+    ]);
     
     const tabs = await chrome.tabs.query({active: true, currentWindow: true});
     if (tabs.length > 0) {
       const response = await sendMessageToTab(tabs[0].id, { action: 'clearSelection' });
       if (response?.success) {
+        console.log('Background: Selection cleared successfully in content script');
         sendResponse({ success: true, message: 'Selection cleared successfully' });
       } else {
+        console.log('Background: Content script not available, but background cleared');
         sendResponse({ success: true, message: 'Selection cleared in background, content script not available' });
       }
     } else {
+      console.log('Background: No active tabs, background selection cleared');
       sendResponse({ success: true, message: 'Selection cleared in background, no active tabs' });
     }
+    
+    console.log('Background: Complete selection clear finished');
   } catch (error) {
     console.log('Error in handleClearSelection:', error);
+    // Ensure currentSelection is cleared even on error
+    currentSelection = '';
     sendResponse({ success: true, message: 'Selection cleared in background, error accessing tabs' });
   }
 }

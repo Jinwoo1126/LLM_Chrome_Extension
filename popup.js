@@ -139,22 +139,39 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (resetBtn) {
       resetBtn.addEventListener('click', async () => {
         try {
+          console.log('Popup: Reset button clicked, clearing all selection data...');
+          
+          // 1. Hide UI immediately
           hideSelectionInfo();
-          // Clear selection using background script as a safer approach
+          
+          // 2. Reset SelectionManager if available
+          if (window.llmChatApp?.selectionManager) {
+            console.log('Popup: Calling SelectionManager.resetSelection()');
+            await window.llmChatApp.selectionManager.resetSelection();
+          }
+          
+          // 3. Clear selection in background script and content script
           await new Promise((resolve, reject) => {
             chrome.runtime.sendMessage({action: 'clearSelection'}, function(response) {
               if (chrome.runtime.lastError) {
                 console.log('Could not send clearSelection message to background:', chrome.runtime.lastError.message);
                 reject(new Error(chrome.runtime.lastError.message));
               } else {
+                console.log('Background clearSelection response:', response);
                 resolve(response);
               }
             });
           });
-          console.log('Selection cleared successfully');
+          
+          // 4. Clear local state
+          currentSelection = '';
+          
+          console.log('Popup: Selection completely cleared');
         } catch (error) {
           console.log('Failed to clear selection:', error.message);
-          // Selection clearing failed, but at least hide the UI selection info
+          // Even if some steps fail, ensure UI is hidden and local state is cleared
+          hideSelectionInfo();
+          currentSelection = '';
         }
       });
     }
@@ -234,7 +251,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   // Listen for selection events from SelectionManager
   document.addEventListener('selection:updated', (event) => {
     console.log('Popup: Received selection update event:', event.detail.selection);
+    
+    // Don't update if we just reset (currentSelection should be empty after reset)
+    if (!currentSelection && !event.detail.selection) {
+      console.log('Popup: Ignoring selection update after reset');
+      return;
+    }
+    
     showSelectionInfo(event.detail.selection);
+  });
+
+  // Listen for selection reset events
+  document.addEventListener('selection:reset', (event) => {
+    console.log('Popup: Received selection reset event');
+    hideSelectionInfo();
+    currentSelection = '';
   });
 
   // Send button event listener
