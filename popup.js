@@ -2,6 +2,30 @@
 import { LLMChatApp } from './src/llm-chat-app.js';
 import { getLocalizedMessage } from './src/constants/app-constants.js';
 
+// Safe Chrome runtime message sender
+function safeRuntimeSendMessage(message) {
+  return new Promise((resolve, reject) => {
+    try {
+      if (chrome.runtime && chrome.runtime.id) {
+        chrome.runtime.sendMessage(message, function(response) {
+          if (chrome.runtime.lastError) {
+            console.log('Runtime message error:', chrome.runtime.lastError.message);
+            reject(new Error(chrome.runtime.lastError.message));
+          } else {
+            resolve(response);
+          }
+        });
+      } else {
+        console.log('Chrome runtime context invalidated');
+        reject(new Error('Extension context invalidated'));
+      }
+    } catch (error) {
+      console.log('Error sending runtime message:', error.message);
+      reject(error);
+    }
+  });
+}
+
 // Initialize application when DOM is loaded
 document.addEventListener('DOMContentLoaded', async function() {
   // Global variables
@@ -45,28 +69,57 @@ document.addEventListener('DOMContentLoaded', async function() {
     alert('Failed to load the extension. Please refresh the page.');
   }
 
-  // 탭 버튼 및 패널
-  const tabChat = document.getElementById('tab-chat');
-  const tabSettings = document.getElementById('tab-settings');
+  // 메뉴 버튼 및 드롭다운
+  const menuButton = document.getElementById('menu-button');
+  const menuDropdown = document.getElementById('menu-dropdown');
+  const menuSettings = document.getElementById('menu-settings');
+  const menuClearHistory = document.getElementById('menu-clear-history');
   const settingsPanel = document.getElementById('settings-panel');
+  const closeSettings = document.getElementById('close-settings');
   const chatContent = document.getElementById('chat-content');
 
-  if (tabChat && tabSettings && chatMessages && settingsPanel && chatContent) {
-    // Chat 탭 클릭 시
-    tabChat.addEventListener('click', () => {
-      tabChat.classList.add('active');
-      tabSettings.classList.remove('active');
-      chatContent.style.display = 'flex';
-      settingsPanel.classList.add('hidden');
+  if (menuButton && menuDropdown && settingsPanel && chatContent) {
+    // 메뉴 버튼 클릭 시 드롭다운 토글
+    menuButton.addEventListener('click', (e) => {
+      e.stopPropagation();
+      menuDropdown.classList.toggle('hidden');
     });
 
-    // Settings 탭 클릭 시
-    tabSettings.addEventListener('click', () => {
-      tabSettings.classList.add('active');
-      tabChat.classList.remove('active');
-      chatContent.style.display = 'none';
-      settingsPanel.classList.remove('hidden');
+    // 문서 클릭 시 드롭다운 닫기
+    document.addEventListener('click', (e) => {
+      if (!menuDropdown.contains(e.target) && !menuButton.contains(e.target)) {
+        menuDropdown.classList.add('hidden');
+      }
     });
+
+    // 설정 메뉴 클릭 시
+    if (menuSettings) {
+      menuSettings.addEventListener('click', () => {
+        menuDropdown.classList.add('hidden');
+        chatContent.style.display = 'none';
+        settingsPanel.classList.remove('hidden');
+        loadSettings(); // 설정 불러오기
+      });
+    }
+
+    // 대화 기록 삭제 메뉴 클릭 시
+    if (menuClearHistory) {
+      menuClearHistory.addEventListener('click', () => {
+        menuDropdown.classList.add('hidden');
+        if (confirm('대화 기록을 모두 삭제하시겠습니까?')) {
+          const event = new CustomEvent('ui:clearHistory');
+          document.dispatchEvent(event);
+        }
+      });
+    }
+
+    // 설정 닫기 버튼 클릭 시
+    if (closeSettings) {
+      closeSettings.addEventListener('click', () => {
+        settingsPanel.classList.add('hidden');
+        chatContent.style.display = 'flex';
+      });
+    }
 
     // 설정 저장
     const saveBtn = document.getElementById('save-settings');
@@ -81,11 +134,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         chrome.storage.local.set({ apiType, lang }, () => {
           const savedMessage = getLocalizedMessage('SETTINGS_SAVED', currentLanguage);
           alert(savedMessage);
+          
+          // 설정 저장 후 채팅 화면으로 돌아가기
+          settingsPanel.classList.add('hidden');
+          chatContent.style.display = 'flex';
         });
       });
     }
 
-    // 설정값 불러오기
+    // 설정값 불러오기 함수
     function loadSettings() {
       chrome.storage.local.get(['apiType', 'lang'], (result) => {
         if (result.apiType) document.getElementById('api-type-select').value = result.apiType;
@@ -93,12 +150,7 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
 
-    // 설정 탭 진입 시 불러오기
-    tabSettings.addEventListener('click', loadSettings);
-
-    // 초기 상태 설정 (챗 탭이 기본)
-    tabChat.classList.add('active');
-    tabSettings.classList.remove('active');
+    // 초기 상태 설정 (채팅이 기본)
     chatContent.style.display = 'flex';
     settingsPanel.classList.add('hidden');
   }
@@ -108,7 +160,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Selection buttons
     const summarizeBtn = document.getElementById('summarize-selection');
     const translateBtn = document.getElementById('translate-selection');
-    const resetBtn = document.getElementById('reset-selection');
+    const closeSelectionBtn = document.getElementById('close-selection');
 
     if (summarizeBtn) {
       summarizeBtn.addEventListener('click', (event) => {
@@ -136,10 +188,13 @@ document.addEventListener('DOMContentLoaded', async function() {
       });
     }
 
-    if (resetBtn) {
-      resetBtn.addEventListener('click', async () => {
+    if (closeSelectionBtn) {
+      closeSelectionBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        
         try {
-          console.log('Popup: Reset button clicked, clearing all selection data...');
+          console.log('Popup: Close selection button clicked, clearing all selection data...');
           
           // 1. Hide UI immediately
           hideSelectionInfo();
@@ -151,17 +206,13 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           
           // 3. Clear selection in background script and content script
-          await new Promise((resolve, reject) => {
-            chrome.runtime.sendMessage({action: 'clearSelection'}, function(response) {
-              if (chrome.runtime.lastError) {
-                console.log('Could not send clearSelection message to background:', chrome.runtime.lastError.message);
-                reject(new Error(chrome.runtime.lastError.message));
-              } else {
-                console.log('Background clearSelection response:', response);
-                resolve(response);
-              }
-            });
-          });
+          try {
+            const response = await safeRuntimeSendMessage({action: 'clearSelection'});
+            console.log('Background clearSelection response:', response);
+          } catch (error) {
+            console.log('Could not send clearSelection message to background:', error.message);
+            // Continue with cleanup anyway
+          }
           
           // 4. Clear local state
           currentSelection = '';
@@ -310,11 +361,6 @@ document.addEventListener('DOMContentLoaded', async function() {
           }
           // Reset selection stored state after using it
           isSelectionStored = false;
-          const useSelectionButton = document.getElementById('use-selection');
-          if (useSelectionButton) {
-            useSelectionButton.textContent = '\ud83d\udccb Use Selection';
-            useSelectionButton.classList.remove('selection-stored');
-          }
         }
         addMessage(displayMessage, true);
         userInput.value = '';

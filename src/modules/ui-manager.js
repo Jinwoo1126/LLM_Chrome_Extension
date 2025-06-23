@@ -45,8 +45,7 @@ export class UIManager {
       selectionHeaderIcon: document.querySelector('.selection-header-icon'),
 
       // Selection buttons
-      useSelectionButton: DOMUtils.getElementById('use-selection'),
-      resetSelectionButton: DOMUtils.getElementById('reset-selection'),
+      closeSelectionButton: DOMUtils.getElementById('close-selection'),
       summarizeButton: DOMUtils.getElementById('summarize-selection'),
       translateButton: DOMUtils.getElementById('translate-selection')
     };
@@ -374,23 +373,9 @@ export class UIManager {
    * Add clear history button
    */
   addClearHistoryButton() {
-    const modelSelector = document.querySelector('.model-selector');
-    if (!modelSelector) return;
-
-    const clearButton = DOMUtils.createElement('button', {
-      id: 'clear-history',
-      className: 'clear-history-button',
-      title: '대화 기록 삭제'
-    }, '🗑️');
-
-    modelSelector.appendChild(clearButton);
-
-    DOMUtils.addEventListener(clearButton, 'click', () => {
-      if (confirm('대화 기록을 모두 삭제하시겠습니까?')) {
-        const event = new CustomEvent('ui:clearHistory');
-        document.dispatchEvent(event);
-      }
-    });
+    // 메뉴 형태로 변경되었으므로 별도의 버튼 추가는 불필요
+    // 이벤트 리스너는 popup.js에서 직접 처리
+    console.log('Clear history functionality is now handled via menu dropdown');
   }
 
   /**
@@ -466,10 +451,8 @@ export class UIManager {
       DOMUtils[method](this.elements.selectionInfo);
     }
 
-    if (state.selectionStored !== undefined) {
-      const method = state.selectionStored ? 'addClass' : 'removeClass';
-      DOMUtils[method](this.elements.useSelectionButton, APP_CONSTANTS.CSS_CLASSES.SELECTION_STORED);
-    }
+    // Note: selectionStored functionality is now handled by close button
+    // No need to update useSelectionButton styles as it no longer exists
   }
 
   /**

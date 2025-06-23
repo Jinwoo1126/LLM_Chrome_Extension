@@ -1,6 +1,28 @@
 // Content script for LLM Chrome Extension
 console.log('Content script loaded');
 
+// Safe Chrome runtime message sender
+function safeRuntimeSendMessage(message, callback) {
+  try {
+    if (chrome.runtime && chrome.runtime.id) {
+      chrome.runtime.sendMessage(message, function(response) {
+        if (chrome.runtime.lastError) {
+          console.log('Runtime message error:', chrome.runtime.lastError.message);
+          if (callback) callback(null);
+        } else {
+          if (callback) callback(response);
+        }
+      });
+    } else {
+      console.log('Chrome runtime context invalidated');
+      if (callback) callback(null);
+    }
+  } catch (error) {
+    console.log('Error sending runtime message:', error.message);
+    if (callback) callback(null);
+  }
+}
+
 // Optimized function to get selection from all frames
 function getAllSelections() {
   let selections = [];
@@ -47,33 +69,35 @@ let currentSelection = '';
 let lastNotifiedSelection = '';
 let selectionChangeTimeout;
 
-// Optimized selection change handler with smart debouncing
+// Listen for text selection changes
 document.addEventListener('selectionchange', function() {
-  // Clear previous timeout
-  if (selectionChangeTimeout) {
-    clearTimeout(selectionChangeTimeout);
-  }
+  const selection = window.getSelection();
+  const selectedText = selection.toString().trim();
   
-  // Debounce selection changes (300ms delay)
-  selectionChangeTimeout = setTimeout(() => {
-    const newSelection = getAllSelections();
+  if (selectedText && selectedText.length > 0) {
+    console.log('Content script: Selection changed, notifying background');
     
-    // Only notify if selection actually changed and is not empty
-    if (newSelection !== lastNotifiedSelection && newSelection.trim()) {
-      currentSelection = newSelection;
-      lastNotifiedSelection = newSelection;
-      
-      console.log('Content script: Selection changed, notifying background');
-      
-      // Send message to background script
-      chrome.runtime.sendMessage({ 
-        action: 'selectionChanged', 
-        selectedText: newSelection 
-      }).catch(error => {
-        console.log('Could not send selection change message:', error.message);
-      });
+    // Send message to background script
+    safeRuntimeSendMessage({
+      action: 'selectionChanged',
+      selectedText: selectedText
+    });
+  }
+});
+
+// Listen for messages from background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'clearSelection') {
+    console.log('Content script: Received clear selection message');
+    
+    // Clear the current selection
+    const selection = window.getSelection();
+    if (selection.rangeCount > 0) {
+      selection.removeAllRanges();
     }
-  }, 300);
+    
+    sendResponse({ success: true });
+  }
 });
 
 // Optimized message listener
@@ -91,33 +115,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({ selectedText: selection || currentSelection });
       break;
       
-    case 'clearSelection':
-      // Clear selections in all frames
-      try {
-        window.getSelection().removeAllRanges();
-        
-        // Clear iframe selections
-        const iframes = document.getElementsByTagName('iframe');
-        for (let iframe of iframes) {
-          try {
-            const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
-            iframeDoc.getSelection().removeAllRanges();
-          } catch (e) {
-            // Silently ignore iframe access errors
-          }
-        }
-        
-        // Reset internal state
-        currentSelection = '';
-        lastNotifiedSelection = '';
-        
-        sendResponse({ success: true });
-      } catch (error) {
-        console.log('Error clearing selection:', error);
-        sendResponse({ success: false, error: error.message });
-      }
-      break;
-      
     default:
       console.log('Content script: Unknown action:', message.action);
   }
@@ -126,11 +123,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Notify background script that content script is ready
-chrome.runtime.sendMessage({ 
+safeRuntimeSendMessage({ 
   action: 'contentScriptReady',
   url: window.location.href 
-}).catch(error => {
-  console.log('Could not send ready message:', error.message);
+}, (response) => {
+  if (response) {
+    console.log('Content script ready message sent');
+  } else {
+    console.log('Could not send ready message');
+  }
 });
 
 console.log('Content script setup complete');

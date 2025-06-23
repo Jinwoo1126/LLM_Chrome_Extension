@@ -57,10 +57,11 @@ export class SelectionManager {
    * Setup event listeners for UI elements
    */
   setupEventListeners() {
-    if (!this.elements.selectionHeader) return;
+    const selectionHeaderLeft = document.querySelector('.selection-header-left');
+    if (!selectionHeaderLeft) return;
 
-    // Toggle selection content visibility
-    this.elements.selectionHeader.addEventListener('click', () => {
+    // Toggle selection content visibility - only on left part to avoid conflict with close button
+    selectionHeaderLeft.addEventListener('click', () => {
       this.toggleSelectionContent();
     });
   }
