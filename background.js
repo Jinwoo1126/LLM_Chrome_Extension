@@ -38,6 +38,33 @@ function notifyContextAction(action, selection) {
   });
 }
 
+// 안전한 sidepanel 열기 함수 - 사용자 제스처 컨텍스트 유지
+function openSidePanelSafely(tabInfo = null) {
+  try {
+    if (tabInfo && tabInfo.id && tabInfo.id !== -1) {
+      // 유효한 tabId가 있는 경우
+      chrome.sidePanel.open({ tabId: tabInfo.id });
+      console.log('Sidepanel opened for tab:', tabInfo.id);
+    } else if (tabInfo && tabInfo.windowId && tabInfo.windowId !== -1) {
+      // tabId가 없거나 유효하지 않지만 windowId가 있는 경우
+      chrome.sidePanel.open({ windowId: tabInfo.windowId });
+      console.log('Sidepanel opened for window:', tabInfo.windowId);
+    } else {
+      // 둘 다 없는 경우 현재 창에서 열기 (Chrome의 현재 창 ID 사용)
+      chrome.windows.getCurrent((window) => {
+        if (window && window.id) {
+          chrome.sidePanel.open({ windowId: window.id });
+          console.log('Sidepanel opened for current window:', window.id);
+        } else {
+          console.error('Could not get current window information');
+        }
+      });
+    }
+  } catch (error) {
+    console.error('Error opening sidepanel:', error);
+  }
+}
+
 // Create context menu items when extension is installed or updated
 chrome.runtime.onInstalled.addListener(() => {
   // Create parent menu item
@@ -80,13 +107,13 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
   
   const contextData = {
     contextSelection: currentSelection,
-    activeTabId: tab.id,
+    activeTabId: tab?.id || null,
     actionProcessed: false
   };
 
   switch (info.menuItemId) {
     case 'llm-extension':
-      chrome.sidePanel.open({ windowId: tab.windowId });
+      openSidePanelSafely(tab);
       break;
       
     case 'ask-about-selection':
@@ -108,26 +135,22 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
       chrome.storage.local.set({ 
         contextAction: 'selection',
         ...contextData
-      }, () => {
-        chrome.sidePanel.open({ windowId: tab.windowId }).then(() => {
-          setTimeout(() => notifyContextAction('selection', currentSelection), 100);
-        }).catch(() => {
-          notifyContextAction('selection', currentSelection);
-        });
       });
+      // 사용자 제스처 컨텍스트 유지를 위해 즉시 실행
+      openSidePanelSafely(tab);
+      // 약간의 지연 후 알림 - 하지만 sidepanel 열기는 먼저
+      setTimeout(() => notifyContextAction('selection', currentSelection), 100);
       break;
       
     case 'summarize-in-side-panel':
       chrome.storage.local.set({ 
         contextAction: 'summarize',
         ...contextData
-      }, () => {
-        chrome.sidePanel.open({ windowId: tab.windowId }).then(() => {
-          setTimeout(() => notifyContextAction('summarize', currentSelection), 100);
-        }).catch(() => {
-          notifyContextAction('summarize', currentSelection);
-        });
       });
+      // 사용자 제스처 컨텍스트 유지를 위해 즉시 실행
+      openSidePanelSafely(tab);
+      // 약간의 지연 후 알림 - 하지만 sidepanel 열기는 먼저
+      setTimeout(() => notifyContextAction('summarize', currentSelection), 100);
       break;
   }
 });

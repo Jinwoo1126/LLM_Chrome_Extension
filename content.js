@@ -1,6 +1,13 @@
 // Content script for LLM Chrome Extension
 console.log('Content script loaded');
 
+// PDF 페이지인지 확인
+if (document.contentType === 'application/pdf' || 
+    window.location.href.endsWith('.pdf')) {
+  // PDF용 특별 처리
+  console.log('PDF page detected');
+}
+
 // Safe Chrome runtime message sender
 function safeRuntimeSendMessage(message, callback) {
   try {
