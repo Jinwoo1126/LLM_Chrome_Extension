@@ -160,4 +160,91 @@ export class ConversationManager {
       Utils.logError('ConversationManager.saveConversationHistory', error);
     }
   }
+
+  /**
+   * Clear conversation history
+   */
+  async clearHistory() {
+    try {
+      console.log('Clearing conversation history...');
+      this.conversationHistory = [];
+      await this.saveConversationHistory();
+      console.log('Conversation history cleared successfully');
+    } catch (error) {
+      console.error('Error clearing conversation history:', error);
+      Utils.logError('ConversationManager.clearHistory', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get conversation statistics
+   */
+  getStats() {
+    return {
+      messageCount: this.conversationHistory.length,
+      userMessages: this.conversationHistory.filter(msg => msg.isUser).length,
+      assistantMessages: this.conversationHistory.filter(msg => !msg.isUser).length,
+      totalCharacters: this.conversationHistory.reduce((sum, msg) => sum + (msg.content?.length || 0), 0),
+      isLoaded: this.isLoaded
+    };
+  }
+
+  /**
+   * Export conversation history
+   */
+  exportHistory(format = 'json') {
+    const history = this.getHistory();
+    
+    if (format === 'json') {
+      return JSON.stringify(history, null, 2);
+    } else if (format === 'txt') {
+      return history.map(msg => {
+        const timestamp = new Date(msg.timestamp).toLocaleString();
+        const role = msg.isUser ? 'User' : 'Assistant';
+        const selection = msg.selection ? `\n[Selected: ${msg.selection}]\n` : '';
+        return `[${timestamp}] ${role}:${selection}\n${msg.content}\n`;
+      }).join('\n---\n\n');
+    }
+    
+    return history;
+  }
+
+  /**
+   * Import conversation history
+   */
+  async importHistory(data, format = 'json') {
+    try {
+      let importedHistory = [];
+      
+      if (format === 'json') {
+        if (typeof data === 'string') {
+          importedHistory = JSON.parse(data);
+        } else {
+          importedHistory = data;
+        }
+      }
+      
+      // Validate imported data
+      if (!Array.isArray(importedHistory)) {
+        throw new Error('Invalid history format');
+      }
+      
+      // Validate each message
+      const validMessages = importedHistory.filter(msg => 
+        msg && 
+        typeof msg === 'object' && 
+        msg.content && 
+        typeof msg.isUser === 'boolean'
+      );
+      
+      this.conversationHistory = validMessages;
+      await this.saveConversationHistory();
+      
+      return true;
+    } catch (error) {
+      Utils.logError('ConversationManager.importHistory', error);
+      return false;
+    }
+  }
 }

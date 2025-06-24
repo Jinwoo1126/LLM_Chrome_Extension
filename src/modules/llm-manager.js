@@ -9,6 +9,7 @@ export class LLMManager {
     this.currentConfig = null;
     this.isInitialized = false;
     this.currentLanguage = 'ko'; // Default language
+    this.cachedSystemPrompt = null; // 캐시된 시스템 프롬프트
   }
 
   /**
@@ -18,6 +19,7 @@ export class LLMManager {
     try {
       this.currentConfig = await apiConfig.getConfig();
       this.currentLanguage = await this.getCurrentLanguage();
+      this.cachedSystemPrompt = getSystemPrompt(this.currentLanguage); // 초기 시스템 프롬프트 캐시
       this.isInitialized = true;
     } catch (error) {
       Utils.logError('LLMManager.initialize', error);
@@ -69,17 +71,31 @@ export class LLMManager {
   async sendOllamaMessage(message, conversationHistory, onChunk, onComplete, onError) {
     const config = this.currentConfig;
     
+    // 현재 언어 설정 확인 및 업데이트
+    const currentLang = await this.getCurrentLanguage();
+    if (currentLang !== this.currentLanguage) {
+      await this.updateLanguage(currentLang);
+    }
+    
     // Get system prompt based on current language
-    const systemPrompt = getSystemPrompt(this.currentLanguage);
+    const systemPrompt = this.getCurrentSystemPrompt();
+    
+    // 언어별 추가 강화 프롬프트
+    const languageReinforcement = currentLang === 'ko' ? 
+      '\n\n**다시 한 번 강조: 이 메시지에 대한 답변은 반드시 한국어로 작성해주세요.**' :
+      '\n\n**Reminder: Please respond to this message in English.**';
     
     // Filter out any existing system messages from history
     const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');
+    
+    // 사용자 메시지에 언어 지침 추가
+    const enhancedMessage = message + languageReinforcement;
     
     // Prepare messages array with system prompt
     const messages = [
       { role: 'system', content: systemPrompt },
       ...filteredHistory,
-      { role: 'user', content: message }
+      { role: 'user', content: enhancedMessage }
     ];
 
     // Validate message pattern
@@ -119,17 +135,31 @@ export class LLMManager {
   async sendVLLMMessage(message, conversationHistory, onChunk, onComplete, onError) {
     const config = this.currentConfig;
     
+    // 현재 언어 설정 확인 및 업데이트
+    const currentLang = await this.getCurrentLanguage();
+    if (currentLang !== this.currentLanguage) {
+      await this.updateLanguage(currentLang);
+    }
+    
     // Get system prompt based on current language
-    const systemPrompt = getSystemPrompt(this.currentLanguage);
+    const systemPrompt = this.getCurrentSystemPrompt();
+    
+    // 언어별 추가 강화 프롬프트
+    const languageReinforcement = currentLang === 'ko' ? 
+      '\n\n**다시 한 번 강조: 이 메시지에 대한 답변은 반드시 한국어로만 작성해주세요. 영어나 다른 언어는 절대 사용하지 마세요.**' :
+      '\n\n**Reminder: Please respond to this message only in English. Do not use Korean or other languages.**';
     
     // Filter out any existing system messages from history
     const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');
+    
+    // 사용자 메시지에 언어 지침 추가
+    const enhancedMessage = message + languageReinforcement;
     
     // Prepare messages array for vLLM with system prompt
     const messages = [
       { role: 'system', content: systemPrompt },
       ...filteredHistory,
-      { role: 'user', content: message }
+      { role: 'user', content: enhancedMessage }
     ];
 
     // Validate message pattern
@@ -432,5 +462,33 @@ export class LLMManager {
     console.log('Validated message pattern:', result.map(m => ({ role: m.role, contentLength: m.content.length })));
     
     return result;
+  }
+
+  /**
+   * Update language and refresh system prompt
+   * @param {string} newLanguage - New language code
+   */
+  async updateLanguage(newLanguage) {
+    if (this.currentLanguage !== newLanguage) {
+      this.currentLanguage = newLanguage;
+      this.cachedSystemPrompt = getSystemPrompt(newLanguage);
+      
+      // 언어 설정을 스토리지에 저장
+      await new Promise((resolve) => {
+        chrome.storage.local.set({ lang: newLanguage }, resolve);
+      });
+      
+      console.log(`Language updated to: ${newLanguage}`);
+    }
+  }
+
+  /**
+   * Get current system prompt (cached or fresh)
+   */
+  getCurrentSystemPrompt() {
+    if (!this.cachedSystemPrompt) {
+      this.cachedSystemPrompt = getSystemPrompt(this.currentLanguage);
+    }
+    return this.cachedSystemPrompt;
   }
 }

@@ -129,9 +129,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         const lang = document.getElementById('lang-select').value;
         
         // Update current language
+        const oldLanguage = currentLanguage;
         currentLanguage = lang;
         
-        chrome.storage.local.set({ apiType, lang }, () => {
+        chrome.storage.local.set({ apiType, lang }, async () => {
+          // 언어가 변경된 경우 LLM Manager에 알림
+          if (oldLanguage !== lang && window.llmChatApp && window.llmChatApp.llmManager) {
+            try {
+              await window.llmChatApp.llmManager.updateLanguage(lang);
+              console.log(`Language updated from ${oldLanguage} to ${lang}`);
+            } catch (error) {
+              console.error('Failed to update language in LLM Manager:', error);
+            }
+          }
+          
           const savedMessage = getLocalizedMessage('SETTINGS_SAVED', currentLanguage);
           alert(savedMessage);
           

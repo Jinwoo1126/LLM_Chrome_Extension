@@ -66,6 +66,7 @@ export class LLMChatApp {
     document.addEventListener('ui:sendMessage', this.handleSendMessage.bind(this));
     document.addEventListener('ui:modelChanged', this.handleModelChanged.bind(this));
     document.addEventListener('ui:clearHistory', this.handleClearHistory.bind(this));
+    document.addEventListener('ui:languageChanged', this.handleLanguageChanged.bind(this)); // 새로 추가
 
     // Selection events
     document.addEventListener('selection:selectionStored', this.handleSelectionStored.bind(this));
@@ -311,7 +312,7 @@ export class LLMChatApp {
   /**
    * Handle clear history event
    */
-  async handleClearHistory() {
+  async handleClearHistory(event) {
     try {
       await this.conversationManager.clearHistory();
       this.uiManager.clearMessages();
@@ -464,6 +465,21 @@ export class LLMChatApp {
     } catch (error) {
       Utils.logError('LLMChatApp.restart', error);
       this.uiManager.showError('Failed to restart application');
+    }
+  }
+
+  /**
+   * Handle language changed event
+   */
+  async handleLanguageChanged(event) {
+    const { language } = event.detail;
+    
+    try {
+      await this.llmManager.updateLanguage(language);
+      this.uiManager.showSuccess(`Language changed to ${language === 'ko' ? '한국어' : 'English'}`);
+    } catch (error) {
+      Utils.logError('LLMChatApp.handleLanguageChanged', error);
+      this.uiManager.showError('Failed to change language');
     }
   }
 }
