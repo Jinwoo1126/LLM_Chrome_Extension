@@ -87,6 +87,81 @@ export class ChromeUtils {
   }
 
   /**
+   * Get item from Chrome local storage
+   * @param {string} key - Storage key
+   * @returns {Promise<any>} - Promise resolving to stored value
+   */
+  static async getLocalStorageItem(key) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.get([key], (result) => {
+            if (chrome.runtime.lastError) {
+              console.error('Chrome storage get error:', chrome.runtime.lastError.message);
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              console.log('Chrome storage get result:', key, result);
+              resolve(result[key]);
+            }
+          });
+        } else {
+          // Fallback to localStorage for testing environment
+          console.log('Using localStorage fallback for key:', key);
+          try {
+            const value = localStorage.getItem(key);
+            const parsedValue = value ? JSON.parse(value) : null;
+            console.log('LocalStorage fallback result:', key, parsedValue);
+            resolve(parsedValue);
+          } catch (e) {
+            console.log('LocalStorage parse error, returning raw value:', value);
+            resolve(value);
+          }
+        }
+      } catch (error) {
+        console.error('getLocalStorageItem error:', error);
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Set item in Chrome local storage
+   * @param {string} key - Storage key
+   * @param {any} value - Value to store
+   * @returns {Promise<void>} - Promise resolving when data is stored
+   */
+  static async setLocalStorageItem(key, value) {
+    return new Promise((resolve, reject) => {
+      try {
+        if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+          console.log('Saving to Chrome storage:', key, value);
+          chrome.storage.local.set({ [key]: value }, () => {
+            if (chrome.runtime.lastError) {
+              console.error('Chrome storage set error:', chrome.runtime.lastError.message);
+              reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              console.log('Successfully saved to Chrome storage:', key);
+              resolve();
+            }
+          });
+        } else {
+          // Fallback to localStorage for testing environment
+          console.log('Using localStorage fallback for saving:', key, value);
+          try {
+            localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        }
+      } catch (error) {
+        console.error('setLocalStorageItem error:', error);
+        reject(error);
+      }
+    });
+  }
+
+  /**
    * Get active tab
    * @returns {Promise} - Promise resolving to active tab
    */

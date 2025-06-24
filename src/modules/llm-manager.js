@@ -72,16 +72,22 @@ export class LLMManager {
     // Get system prompt based on current language
     const systemPrompt = getSystemPrompt(this.currentLanguage);
     
-    // Prepare messages array with system prompt (system prompt is not part of conversation history)
+    // Filter out any existing system messages from history
+    const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');
+    
+    // Prepare messages array with system prompt
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory,
+      ...filteredHistory,
       { role: 'user', content: message }
     ];
 
+    // Validate message pattern
+    const validatedMessages = this.validateMessagePattern(messages);
+
     const requestBody = {
       model: config.model,
-      messages: messages,
+      messages: validatedMessages,
       stream: true,
       ...config.params
     };
@@ -116,16 +122,22 @@ export class LLMManager {
     // Get system prompt based on current language
     const systemPrompt = getSystemPrompt(this.currentLanguage);
     
-    // Prepare messages array for vLLM with system prompt (system prompt is not part of conversation history)
+    // Filter out any existing system messages from history
+    const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');
+    
+    // Prepare messages array for vLLM with system prompt
     const messages = [
       { role: 'system', content: systemPrompt },
-      ...conversationHistory,
+      ...filteredHistory,
       { role: 'user', content: message }
     ];
 
+    // Validate message pattern
+    const validatedMessages = this.validateMessagePattern(messages);
+
     const requestBody = {
       model: config.model,
-      messages: messages,
+      messages: validatedMessages,
       stream: true,
       ...config.params
     };
@@ -377,5 +389,48 @@ export class LLMManager {
 
     const maxChars = maxTokens * 4; // Rough estimation
     return message.substring(0, maxChars) + '...\n[Message truncated due to length]';
+  }
+
+  /**
+   * Validate message pattern to ensure proper alternating roles
+   * @param {Array} messages - Array of messages to validate
+   * @returns {Array} - Validated messages array
+   */
+  validateMessagePattern(messages) {
+    const validatedMessages = [];
+    let lastRole = null;
+
+    for (const message of messages) {
+      // Skip empty messages
+      if (!message.content || !message.content.trim()) continue;
+      
+      // System messages are always allowed
+      if (message.role === 'system') {
+        validatedMessages.push(message);
+        lastRole = 'system';
+        continue;
+      }
+      
+      // For user/assistant messages, ensure alternating pattern
+      if (lastRole === message.role && message.role !== 'system') {
+        // Merge with previous message of same role
+        if (validatedMessages.length > 0 && validatedMessages[validatedMessages.length - 1].role === message.role) {
+          validatedMessages[validatedMessages.length - 1].content += '\n\n' + message.content;
+        }
+        continue;
+      }
+      
+      validatedMessages.push(message);
+      lastRole = message.role;
+    }
+
+    // Ensure proper pattern: system should be first (if exists), then alternating user/assistant
+    // and should end with user message
+    const result = validatedMessages.filter(msg => msg.content.trim());
+    
+    // Log for debugging
+    console.log('Validated message pattern:', result.map(m => ({ role: m.role, contentLength: m.content.length })));
+    
+    return result;
   }
 }
