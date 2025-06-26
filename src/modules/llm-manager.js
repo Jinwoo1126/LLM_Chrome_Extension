@@ -82,8 +82,8 @@ export class LLMManager {
     
     // 언어별 추가 강화 프롬프트
     const languageReinforcement = currentLang === 'ko' ? 
-      '\n\n**다시 한 번 강조: 이 메시지에 대한 답변은 반드시 한국어로 작성해주세요.**' :
-      '\n\n**Reminder: Please respond to this message in English.**';
+      '\n\n**이 메시지에 대한 답변은 한국어로 작성해주세요.**' :
+      '\n\n**Please respond to this message in English.**';
     
     // Filter out any existing system messages from history
     const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');

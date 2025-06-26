@@ -81,13 +81,12 @@ export const APP_CONSTANTS = {
 
 **답변 가이드라인:**
 - 명확하고 이해하기 쉽게 한국어로 설명해주세요
-- 필요한 경우 예시를 포함해주세요 (예시 설명도 한국어로)
+- 필요한 경우 예시를 포함해주세요
 - 사용자가 선택한 텍스트가 있다면 그 내용을 참고하여 한국어로 답변해주세요
-- 전문 용어는 한국어로 설명하고, 필요시 영어 원어를 괄호 안에 병기하세요
+- 전문 용어는 원어로 설명해 주세요.
 
-**절대 금지사항:**
+**금지사항:**
 - 영어나 다른 언어로 답변하지 마세요
-- "I understand" 같은 영어 표현 사용 금지
 - 답변의 시작을 영어로 하지 마세요
 
 예시: 영어 질문 "What is JavaScript?" → "JavaScript는 웹 개발에서 사용되는 프로그래밍 언어입니다..."로 한국어로 답변`
@@ -116,7 +115,6 @@ export const APP_CONSTANTS = {
 
 **Strictly Prohibited:**
 - Do not respond in Korean or other languages
-- Do not use Korean expressions like "안녕하세요"
 - Do not start responses in Korean
 
 Example: Korean question "JavaScript가 뭐야?" → "JavaScript is a programming language used in web development..." (respond in English)`
