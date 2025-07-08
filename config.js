@@ -23,7 +23,7 @@ const MODEL_CONFIG = {
     }
   },
   ollama: {
-    endpoint: 'http://localhost:11434/api/chat',
+    endpoint: 'http://localhost:11434/v1/chat/completions', // OpenAI 호환 API 사용
     models: {
       gemma3: {
         name: 'Gemma 3 (Ollama)',

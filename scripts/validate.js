@@ -5,8 +5,12 @@
  * Checks for common issues and validates the extension structure
  */
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class ExtensionValidator {
   constructor() {
@@ -282,9 +286,9 @@ class ExtensionValidator {
 }
 
 // Run validation if this script is executed directly
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   const validator = new ExtensionValidator();
   validator.validate();
 }
 
-module.exports = ExtensionValidator;
+export default ExtensionValidator;

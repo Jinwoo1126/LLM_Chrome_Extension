@@ -56,20 +56,17 @@ export class LLMManager {
 
     const apiType = this.currentConfig.apiType;
     
-    if (apiType === 'ollama') {
-      return this.sendOllamaMessage(message, conversationHistory, onChunk, onComplete, onError);
-    } else if (apiType === 'vllm') {
-      return this.sendVLLMMessage(message, conversationHistory, onChunk, onComplete, onError);
-    } else {
-      throw new Error(`Unsupported API type: ${apiType}`);
-    }
+    // Both Ollama and vLLM now use OpenAI-compatible API
+    return this.sendOpenAICompatibleMessage(message, conversationHistory, onChunk, onComplete, onError);
   }
 
   /**
-   * Send message to Ollama API
+   * Send message to OpenAI-compatible API (Ollama or vLLM)
    */
-  async sendOllamaMessage(message, conversationHistory, onChunk, onComplete, onError) {
+  async sendOpenAICompatibleMessage(message, conversationHistory, onChunk, onComplete, onError) {
     const config = this.currentConfig;
+    
+    console.log(`Sending to ${config.apiType.toUpperCase()} with model:`, config.model);
     
     // 현재 언어 설정 확인 및 업데이트
     const currentLang = await this.getCurrentLanguage();
@@ -88,18 +85,62 @@ export class LLMManager {
     // Filter out any existing system messages from history
     const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');
     
-    // 사용자 메시지에 언어 지침 추가
-    const enhancedMessage = message + languageReinforcement;
+    // Handle multimodal content (image + text) or plain text
+    let userContent;
+    if (Array.isArray(message)) {
+      // Check if model supports multimodal
+      const isMultimodalModel = this.isMultimodalModel(config.model);
+      
+      console.log(`Model: ${config.model}, Multimodal support: ${isMultimodalModel}`);
+      
+      if (isMultimodalModel) {
+        console.log('Processing multimodal content for OpenAI-compatible API');
+        // Use OpenAI-compatible multimodal format
+        userContent = message.map(item => {
+          if (item.type === 'text') {
+            return { type: 'text', text: item.text + languageReinforcement };
+          }
+          if (item.type === 'image_url') {
+            // Keep OpenAI format for compatibility
+            return item;
+          }
+          return item; // Keep other data as is
+        });
+      } else {
+        // Model doesn't support multimodal, extract text only
+        console.warn('Model does not support multimodal input, extracting text only');
+        const textParts = message.filter(item => item.type === 'text').map(item => item.text);
+        userContent = textParts.join('\n') + languageReinforcement;
+        
+        // Add a note about the image being ignored
+        if (message.some(item => item.type === 'image_url')) {
+          userContent += '\n\n[참고: 이미지가 포함되었지만 현재 모델은 이미지를 지원하지 않습니다.]';
+        }
+      }
+    } else {
+      // Plain text message
+      userContent = message + languageReinforcement;
+    }
     
     // Prepare messages array with system prompt
     const messages = [
       { role: 'system', content: systemPrompt },
       ...filteredHistory,
-      { role: 'user', content: enhancedMessage }
+      { role: 'user', content: userContent }
     ];
+
+    console.log('Messages before validation:', messages.map(m => ({
+      role: m.role,
+      contentType: Array.isArray(m.content) ? 'array' : typeof m.content,
+      contentPreview: Array.isArray(m.content) ? 
+        `[${m.content.length} items]` : 
+        String(m.content).substring(0, 50) + '...'
+    })));
 
     // Validate message pattern
     const validatedMessages = this.validateMessagePattern(messages);
+    
+    console.log('Messages after validation:', validatedMessages.length);
 
     const requestBody = {
       model: config.model,
@@ -107,6 +148,10 @@ export class LLMManager {
       stream: true,
       ...config.params
     };
+
+    // Debug: Log the actual request being sent
+    console.log(`${config.apiType.toUpperCase()} Request Body:`, JSON.stringify(requestBody, null, 2));
+    console.log(`${config.apiType.toUpperCase()} Endpoint:`, config.endpoint);
 
     try {
       const response = await fetch(config.endpoint, {
@@ -118,77 +163,28 @@ export class LLMManager {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        // Log response details for debugging
+        let errorText = '';
+        try {
+          errorText = await response.text();
+        } catch (e) {
+          errorText = 'Could not read error response';
+        }
+        
+        console.error(`${config.apiType.toUpperCase()} API Error Response:`, {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+          url: config.endpoint,
+          model: config.model
+        });
+        
+        throw new Error(`${config.apiType.toUpperCase()} API Error: ${response.status} ${response.statusText}. ${errorText}`);
       }
 
-      await this.handleStreamResponse(response, onChunk, onComplete, onError, 'ollama');
+      await this.handleStreamResponse(response, onChunk, onComplete, onError, config.apiType);
     } catch (error) {
-      Utils.logError('LLMManager.sendOllamaMessage', error);
-      if (onError) onError(error);
-      throw error;
-    }
-  }
-
-  /**
-   * Send message to vLLM API
-   */
-  async sendVLLMMessage(message, conversationHistory, onChunk, onComplete, onError) {
-    const config = this.currentConfig;
-    
-    // 현재 언어 설정 확인 및 업데이트
-    const currentLang = await this.getCurrentLanguage();
-    if (currentLang !== this.currentLanguage) {
-      await this.updateLanguage(currentLang);
-    }
-    
-    // Get system prompt based on current language
-    const systemPrompt = this.getCurrentSystemPrompt();
-    
-    // 언어별 추가 강화 프롬프트
-    const languageReinforcement = currentLang === 'ko' ? 
-      '\n\n**다시 한 번 강조: 이 메시지에 대한 답변은 반드시 한국어로만 작성해주세요. 영어나 다른 언어는 절대 사용하지 마세요.**' :
-      '\n\n**Reminder: Please respond to this message only in English. Do not use Korean or other languages.**';
-    
-    // Filter out any existing system messages from history
-    const filteredHistory = conversationHistory.filter(msg => msg.role !== 'system');
-    
-    // 사용자 메시지에 언어 지침 추가
-    const enhancedMessage = message + languageReinforcement;
-    
-    // Prepare messages array for vLLM with system prompt
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      ...filteredHistory,
-      { role: 'user', content: enhancedMessage }
-    ];
-
-    // Validate message pattern
-    const validatedMessages = this.validateMessagePattern(messages);
-
-    const requestBody = {
-      model: config.model,
-      messages: validatedMessages,
-      stream: true,
-      ...config.params
-    };
-
-    try {
-      const response = await fetch(config.endpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`
-        },
-        body: JSON.stringify(requestBody)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      await this.handleStreamResponse(response, onChunk, onComplete, onError, 'vllm');
-    } catch (error) {
-      Utils.logError('LLMManager.sendVLLMMessage', error);
+      Utils.logError(`LLMManager.sendOpenAICompatibleMessage`, error);
       if (onError) onError(error);
       throw error;
     }
@@ -219,11 +215,9 @@ export class LLMManager {
           try {
             let chunk;
             
-            if (apiType === 'ollama') {
-              chunk = this.parseOllamaChunk(line);
-            } else if (apiType === 'vllm') {
-              chunk = this.parseVLLMChunk(line);
-            }
+            // Both Ollama and vLLM now use OpenAI-compatible format
+            // when using /v1/chat/completions endpoint
+            chunk = this.parseOpenAICompatibleChunk(line);
 
             if (chunk && chunk.content) {
               fullResponse += chunk.content;
@@ -251,39 +245,80 @@ export class LLMManager {
   }
 
   /**
-   * Parse Ollama streaming chunk
+   * Parse OpenAI-compatible streaming chunk (used by both Ollama and vLLM)
    */
-  parseOllamaChunk(line) {
-    const data = JSON.parse(line);
+  parseOpenAICompatibleChunk(line) {
+    // Handle OpenAI-style Server-Sent Events format
+    if (line.startsWith('data: ')) {
+      const dataStr = line.slice(6).trim();
+      
+      // Handle completion signal
+      if (dataStr === '[DONE]') {
+        return { content: '', done: true };
+      }
+      
+      try {
+        const data = JSON.parse(dataStr);
+        const delta = data.choices?.[0]?.delta;
+        
+        return {
+          content: delta?.content || '',
+          done: data.choices?.[0]?.finish_reason !== null,
+          model: data.model,
+          id: data.id
+        };
+      } catch (error) {
+        console.warn('Failed to parse OpenAI-compatible chunk:', dataStr);
+        return null;
+      }
+    }
     
-    return {
-      content: data.message?.content || '',
-      done: data.done || false,
-      model: data.model,
-      created_at: data.created_at
-    };
+    // Handle direct JSON format (fallback for legacy Ollama)
+    try {
+      const data = JSON.parse(line);
+      
+      // Ollama native format
+      if (data.message) {
+        return {
+          content: data.message?.content || '',
+          done: data.done || false,
+          model: data.model,
+          created_at: data.created_at
+        };
+      }
+      
+      // OpenAI format
+      if (data.choices) {
+        const delta = data.choices[0]?.delta;
+        return {
+          content: delta?.content || '',
+          done: data.choices[0]?.finish_reason !== null,
+          model: data.model,
+          id: data.id
+        };
+      }
+      
+      return null;
+    } catch (error) {
+      console.warn('Failed to parse JSON chunk:', line);
+      return null;
+    }
   }
 
   /**
-   * Parse vLLM streaming chunk
+   * Parse Ollama streaming chunk (legacy - kept for backward compatibility)
+   */
+  parseOllamaChunk(line) {
+    // Now delegates to OpenAI-compatible parser
+    return this.parseOpenAICompatibleChunk(line);
+  }
+
+  /**
+   * Parse vLLM streaming chunk (legacy - kept for backward compatibility)
    */
   parseVLLMChunk(line) {
-    if (!line.startsWith('data: ')) return null;
-    
-    const dataStr = line.slice(6);
-    if (dataStr === '[DONE]') {
-      return { content: '', done: true };
-    }
-
-    const data = JSON.parse(dataStr);
-    const delta = data.choices?.[0]?.delta;
-    
-    return {
-      content: delta?.content || '',
-      done: data.choices?.[0]?.finish_reason !== null,
-      model: data.model,
-      id: data.id
-    };
+    // Now delegates to OpenAI-compatible parser
+    return this.parseOpenAICompatibleChunk(line);
   }
 
   /**
@@ -430,38 +465,57 @@ export class LLMManager {
     const validatedMessages = [];
     let lastRole = null;
 
-    for (const message of messages) {
-      // Skip empty messages
-      if (!message.content || !message.content.trim()) continue;
-      
-      // System messages are always allowed
-      if (message.role === 'system') {
-        validatedMessages.push(message);
-        lastRole = 'system';
-        continue;
-      }
-      
-      // For user/assistant messages, ensure alternating pattern
-      if (lastRole === message.role && message.role !== 'system') {
-        // Merge with previous message of same role
-        if (validatedMessages.length > 0 && validatedMessages[validatedMessages.length - 1].role === message.role) {
-          validatedMessages[validatedMessages.length - 1].content += '\n\n' + message.content;
+    try {
+      for (const message of messages) {
+        // Ensure message has required properties
+        if (!message || !message.role || message.content === undefined) {
+          console.warn('Skipping invalid message:', message);
+          continue;
         }
-        continue;
-      }
-      
-      validatedMessages.push(message);
-      lastRole = message.role;
-    }
 
-    // Ensure proper pattern: system should be first (if exists), then alternating user/assistant
-    // and should end with user message
-    const result = validatedMessages.filter(msg => msg.content.trim());
-    
-    // Log for debugging
-    console.log('Validated message pattern:', result.map(m => ({ role: m.role, contentLength: m.content.length })));
-    
-    return result;
+        // Skip empty messages - handle both string and array content
+        if (this.isEmptyMessage(message)) {
+          console.log('Skipping empty message:', message.role);
+          continue;
+        }
+        
+        // System messages are always allowed
+        if (message.role === 'system') {
+          validatedMessages.push(message);
+          lastRole = 'system';
+          continue;
+        }
+        
+        // For user/assistant messages, ensure alternating pattern
+        if (lastRole === message.role && message.role !== 'system') {
+          // Merge with previous message of same role
+          if (validatedMessages.length > 0 && validatedMessages[validatedMessages.length - 1].role === message.role) {
+            console.log('Merging consecutive messages of role:', message.role);
+            this.mergeMessages(validatedMessages[validatedMessages.length - 1], message);
+          }
+          continue;
+        }
+        
+        validatedMessages.push(message);
+        lastRole = message.role;
+      }
+
+      // Filter out any messages that might have become empty after processing
+      const result = validatedMessages.filter(msg => !this.isEmptyMessage(msg));
+      
+      // Log for debugging
+      console.log('Validated message pattern:', result.map(m => ({ 
+        role: m.role, 
+        contentType: Array.isArray(m.content) ? 'multimodal' : 'text',
+        contentLength: Array.isArray(m.content) ? m.content.length : m.content.length 
+      })));
+      
+      return result;
+    } catch (error) {
+      console.error('Error in validateMessagePattern:', error);
+      // Return filtered original messages as fallback
+      return messages.filter(msg => msg && msg.role && msg.content !== undefined);
+    }
   }
 
   /**
@@ -490,5 +544,183 @@ export class LLMManager {
       this.cachedSystemPrompt = getSystemPrompt(this.currentLanguage);
     }
     return this.cachedSystemPrompt;
+  }
+
+  /**
+   * Check if message content is empty
+   * @param {Object} message - Message object
+   * @returns {boolean} - Whether message is empty
+   */
+  isEmptyMessage(message) {
+    if (!message.content) return true;
+    
+    // Handle string content
+    if (typeof message.content === 'string') {
+      return !message.content.trim();
+    }
+    
+    // Handle array content (multimodal)
+    if (Array.isArray(message.content)) {
+      // Check if there's any text content that's not empty
+      const hasNonEmptyText = message.content.some(item => {
+        if (item.type === 'text') {
+          return item.text && item.text.trim();
+        }
+        // Image content is never considered empty
+        if (item.type === 'image') {
+          return true;
+        }
+        return false;
+      });
+      return !hasNonEmptyText;
+    }
+    
+    return true;
+  }
+
+  /**
+   * Merge two messages of the same role
+   * @param {Object} targetMessage - Target message to merge into
+   * @param {Object} sourceMessage - Source message to merge from
+   */
+  mergeMessages(targetMessage, sourceMessage) {
+    try {
+      // Handle string content merging
+      if (typeof targetMessage.content === 'string' && typeof sourceMessage.content === 'string') {
+        targetMessage.content += '\n\n' + sourceMessage.content;
+        return;
+      }
+      
+      // Handle array content merging (multimodal)
+      if (Array.isArray(targetMessage.content) && Array.isArray(sourceMessage.content)) {
+        targetMessage.content = targetMessage.content.concat(sourceMessage.content);
+        return;
+      }
+      
+      // Handle mixed content types - convert to string
+      const targetText = this.extractTextFromContent(targetMessage.content);
+      const sourceText = this.extractTextFromContent(sourceMessage.content);
+      targetMessage.content = targetText + '\n\n' + sourceText;
+    } catch (error) {
+      console.error('Error merging messages:', error);
+      // Fallback: convert both to strings
+      targetMessage.content = String(targetMessage.content) + '\n\n' + String(sourceMessage.content);
+    }
+  }
+
+  /**
+   * Extract text content from message content (string or array)
+   * @param {string|Array} content - Message content
+   * @returns {string} - Extracted text
+   */
+  extractTextFromContent(content) {
+    if (typeof content === 'string') {
+      return content;
+    }
+    
+    if (Array.isArray(content)) {
+      return content
+        .filter(item => item.type === 'text')
+        .map(item => item.text)
+        .join('\n');
+    }
+    
+    return String(content);
+  }
+
+  /**
+   * Check if model supports multimodal input
+   * @param {string} modelName - Name of the model
+   * @returns {boolean} - Whether model supports multimodal
+   */
+  isMultimodalModel(modelName) {
+    if (!modelName) return false;
+    
+    const lowerModelName = modelName.toLowerCase();
+    
+    // Specific multimodal model names and patterns
+    const multimodalKeywords = [
+      'vision', 'visual', 'image', 'multimodal', 'mm',
+      'llava', 'claude-3', 'gpt-4', 'gemini', 'pixtral', 'qwen2-vl',
+      'minicpm-v', 'internvl', 'cogvlm', 'yi-vl', 'bakllava', 'moondream'
+    ];
+    
+    // Special case for gemma3 (multimodal) vs gemma-2 (text-only)
+    if (lowerModelName.includes('gemma')) {
+      const isGemma3 = lowerModelName.includes('gemma3') || 
+                       lowerModelName.includes('gemma-3') ||
+                       lowerModelName.match(/gemma[_-]?3/);
+      console.log(`Checking Gemma variant: ${modelName} -> Gemma3: ${isGemma3}`);
+      return isGemma3;
+    }
+    
+    // Check for multimodal keywords
+    const hasMultimodalKeyword = multimodalKeywords.some(keyword => 
+      lowerModelName.includes(keyword)
+    );
+    
+    console.log(`Checking multimodal support for model: ${modelName} -> ${hasMultimodalKeyword}`);
+    return hasMultimodalKeyword;
+  }
+
+  /**
+   * Validate Ollama API request
+   * @param {Object} requestBody - Request body to validate
+   * @returns {Object} - Validation result
+   */
+  validateOllamaRequest(requestBody) {
+    try {
+      // Check required fields
+      if (!requestBody.model) {
+        return { isValid: false, error: 'Model is required' };
+      }
+      
+      if (!requestBody.messages || !Array.isArray(requestBody.messages)) {
+        return { isValid: false, error: 'Messages array is required' };
+      }
+      
+      if (requestBody.messages.length === 0) {
+        return { isValid: false, error: 'At least one message is required' };
+      }
+      
+      // Validate each message
+      for (let i = 0; i < requestBody.messages.length; i++) {
+        const msg = requestBody.messages[i];
+        
+        if (!msg.role) {
+          return { isValid: false, error: `Message ${i} missing role` };
+        }
+        
+        if (!['system', 'user', 'assistant'].includes(msg.role)) {
+          return { isValid: false, error: `Message ${i} has invalid role: ${msg.role}` };
+        }
+        
+        if (msg.content === undefined || msg.content === null) {
+          return { isValid: false, error: `Message ${i} missing content` };
+        }
+        
+        // Validate multimodal content
+        if (Array.isArray(msg.content)) {
+          for (let j = 0; j < msg.content.length; j++) {
+            const item = msg.content[j];
+            if (!item.type) {
+              return { isValid: false, error: `Message ${i}, content item ${j} missing type` };
+            }
+            
+            if (item.type === 'text' && !item.text) {
+              return { isValid: false, error: `Message ${i}, content item ${j} missing text` };
+            }
+            
+            if (item.type === 'image' && !item.image) {
+              return { isValid: false, error: `Message ${i}, content item ${j} missing image data` };
+            }
+          }
+        }
+      }
+      
+      return { isValid: true };
+    } catch (error) {
+      return { isValid: false, error: `Validation error: ${error.message}` };
+    }
   }
 }

@@ -25,19 +25,32 @@ export class ConversationManager {
 
   /**
    * Add message to conversation history
-   * @param {string} message - Message content
+   * @param {string|Array} message - Message content (string or OpenAI format array for multimodal)
    * @param {boolean} isUser - Whether message is from user
    * @param {string} selection - Selected text context
+   * @param {Array} images - Array of image data URLs (optional)
    */
-  addMessage(message, isUser = false, selection = '') {
-    if (!message.trim()) return;
+  addMessage(message, isUser = false, selection = '', images = []) {
+    // Validate message content
+    if (Array.isArray(message)) {
+      // For multimodal messages, check if there's any text content
+      const hasTextContent = message.some(part => 
+        part.type === 'text' && part.text && part.text.trim()
+      );
+      if (!hasTextContent) return;
+    } else if (typeof message === 'string') {
+      if (!message.trim()) return;
+    } else {
+      return; // Invalid message format
+    }
 
     const messageObj = {
       id: Utils.generateId(),
       content: message,
       isUser,
       timestamp: new Date().toISOString(),
-      selection: selection || ''
+      selection: selection || '',
+      images: images || [] // Store image data for history
     };
 
     this.conversationHistory.push(messageObj);
@@ -66,14 +79,30 @@ export class ConversationManager {
   getFormattedHistory() {
     const messages = this.conversationHistory.map(msg => {
       let content = msg.content || '';
-      if (msg.selection && msg.selection.trim()) {
-        // selection이 있으면 프롬프트에 합쳐서 전달
-        content = `${content}\n\n[Selected text context]:\n${msg.selection.trim()}`.trim();
+      
+      // Handle multimodal content (already in OpenAI format)
+      if (Array.isArray(content)) {
+        // If there's selection context, add it to the text parts
+        if (msg.selection && msg.selection.trim()) {
+          const textParts = content.filter(part => part.type === 'text');
+          if (textParts.length > 0) {
+            textParts[0].text = `${textParts[0].text}\n\n[Selected text context]:\n${msg.selection.trim()}`.trim();
+          }
+        }
+        return {
+          role: msg.isUser ? 'user' : 'assistant',
+          content: content
+        };
+      } else {
+        // Handle text-only content
+        if (msg.selection && msg.selection.trim()) {
+          content = `${content}\n\n[Selected text context]:\n${msg.selection.trim()}`.trim();
+        }
+        return {
+          role: msg.isUser ? 'user' : 'assistant',
+          content: content
+        };
       }
-      return {
-        role: msg.isUser ? 'user' : 'assistant',
-        content
-      };
     });
 
     // Ensure alternating user/assistant pattern
@@ -82,13 +111,27 @@ export class ConversationManager {
 
     for (const message of messages) {
       // Skip empty messages
-      if (!message.content.trim()) continue;
+      let hasContent = false;
+      if (Array.isArray(message.content)) {
+        hasContent = message.content.some(part => 
+          (part.type === 'text' && part.text && part.text.trim()) ||
+          (part.type === 'image_url' && part.image_url)
+        );
+      } else {
+        hasContent = message.content && message.content.trim();
+      }
+      
+      if (!hasContent) continue;
       
       // If same role as previous, merge content or skip
       if (lastRole === message.role) {
         if (validatedMessages.length > 0) {
-          // Merge into previous message of same role
-          validatedMessages[validatedMessages.length - 1].content += '\n\n' + message.content;
+          const prevMessage = validatedMessages[validatedMessages.length - 1];
+          // For text content, merge
+          if (!Array.isArray(prevMessage.content) && !Array.isArray(message.content)) {
+            prevMessage.content += '\n\n' + message.content;
+          }
+          // For mixed content, just keep the previous one (complex merging logic not needed here)
         }
         continue;
       }
@@ -139,6 +182,12 @@ export class ConversationManager {
         msg && typeof msg === 'object' && msg.content && typeof msg.isUser === 'boolean'
       );
       
+      // Ensure images array exists for all messages (backward compatibility)
+      this.conversationHistory = this.conversationHistory.map(msg => ({
+        ...msg,
+        images: msg.images || []
+      }));
+      
       console.log('Final loaded conversation history:', this.conversationHistory.length, 'messages');
     } catch (error) {
       console.error('Error loading conversation history:', error);
@@ -181,11 +230,24 @@ export class ConversationManager {
    * Get conversation statistics
    */
   getStats() {
+    const multimodalMessages = this.conversationHistory.filter(msg => 
+      Array.isArray(msg.content) || (msg.images && msg.images.length > 0)
+    ).length;
+    
     return {
       messageCount: this.conversationHistory.length,
       userMessages: this.conversationHistory.filter(msg => msg.isUser).length,
       assistantMessages: this.conversationHistory.filter(msg => !msg.isUser).length,
-      totalCharacters: this.conversationHistory.reduce((sum, msg) => sum + (msg.content?.length || 0), 0),
+      multimodalMessages: multimodalMessages,
+      totalCharacters: this.conversationHistory.reduce((sum, msg) => {
+        if (Array.isArray(msg.content)) {
+          return sum + msg.content.reduce((textSum, part) => {
+            return textSum + (part.type === 'text' ? (part.text?.length || 0) : 0);
+          }, 0);
+        } else {
+          return sum + (msg.content?.length || 0);
+        }
+      }, 0),
       isLoaded: this.isLoaded
     };
   }
@@ -203,7 +265,21 @@ export class ConversationManager {
         const timestamp = new Date(msg.timestamp).toLocaleString();
         const role = msg.isUser ? 'User' : 'Assistant';
         const selection = msg.selection ? `\n[Selected: ${msg.selection}]\n` : '';
-        return `[${timestamp}] ${role}:${selection}\n${msg.content}\n`;
+        
+        let content = '';
+        if (Array.isArray(msg.content)) {
+          // Handle multimodal content
+          const textParts = msg.content.filter(part => part.type === 'text');
+          const imageParts = msg.content.filter(part => part.type === 'image_url');
+          content = textParts.map(part => part.text).join('\n');
+          if (imageParts.length > 0) {
+            content += `\n[${imageParts.length} image(s) attached]`;
+          }
+        } else {
+          content = msg.content;
+        }
+        
+        return `[${timestamp}] ${role}:${selection}\n${content}\n`;
       }).join('\n---\n\n');
     }
     
@@ -236,7 +312,10 @@ export class ConversationManager {
         typeof msg === 'object' && 
         msg.content && 
         typeof msg.isUser === 'boolean'
-      );
+      ).map(msg => ({
+        ...msg,
+        images: msg.images || [] // Ensure images array exists
+      }));
       
       this.conversationHistory = validMessages;
       await this.saveConversationHistory();

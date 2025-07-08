@@ -230,13 +230,42 @@ export class Utils {
   /**
    * Log error with context
    * @param {string} context - Error context
-   * @param {Error} error - Error object
+   * @param {Error|any} error - Error object or any value
    * @param {Object} additionalInfo - Additional info to log
    */
   static logError(context, error, additionalInfo = {}) {
+    // Ensure error is properly formatted
+    let errorInfo;
+    
+    if (error instanceof Error) {
+      errorInfo = {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      };
+    } else if (typeof error === 'string') {
+      errorInfo = {
+        message: error,
+        stack: 'No stack trace available',
+        name: 'StringError'
+      };
+    } else if (error && typeof error === 'object') {
+      errorInfo = {
+        message: error.message || error.toString(),
+        stack: error.stack || 'No stack trace available',
+        name: error.name || 'UnknownError',
+        ...error
+      };
+    } else {
+      errorInfo = {
+        message: String(error),
+        stack: 'No stack trace available',
+        name: 'UnknownError'
+      };
+    }
+
     console.error(`[${context}]`, {
-      message: error.message,
-      stack: error.stack,
+      ...errorInfo,
       timestamp: new Date().toISOString(),
       ...additionalInfo
     });

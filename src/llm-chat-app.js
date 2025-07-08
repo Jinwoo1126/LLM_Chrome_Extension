@@ -4,6 +4,7 @@ import { UIManager } from './modules/ui-manager.js';
 import { ConversationManager } from './modules/conversation-manager.js';
 import { SelectionManager } from './modules/selection-manager.js';
 import { LLMManager } from './modules/llm-manager.js';
+import { ImageManager } from './modules/image-manager.js';
 import { Utils } from './utils/general-utils.js';
 
 export class LLMChatApp {
@@ -12,6 +13,7 @@ export class LLMChatApp {
     this.conversationManager = new ConversationManager();
     this.selectionManager = new SelectionManager();
     this.llmManager = new LLMManager();
+    this.imageManager = new ImageManager();
     
     this.isInitialized = false;
     this.isSendingMessage = false;
@@ -56,6 +58,9 @@ export class LLMChatApp {
     
     // Initialize selection manager with UI elements
     this.selectionManager.initialize(this.uiManager.getElements());
+    
+    // Initialize image manager with UI elements
+    this.imageManager.initialize(this.uiManager.getElements());
   }
 
   /**
@@ -73,6 +78,10 @@ export class LLMChatApp {
     document.addEventListener('selection:selectionReset', this.handleSelectionReset.bind(this));
     // NOTE: Disabled selection:actionRequested to prevent duplicate calls - popup.js handles directly
     // document.addEventListener('selection:actionRequested', this.handleSelectionAction.bind(this));
+
+    // Image events
+    document.addEventListener('image:uploaded', this.handleImageUploaded.bind(this));
+    document.addEventListener('image:removed', this.handleImageRemoved.bind(this));
 
     // Window events
     window.addEventListener('beforeunload', this.handleBeforeUnload.bind(this));
@@ -129,9 +138,10 @@ export class LLMChatApp {
       console.log('Getting current selection for message...');
       const currentSelection = await this.selectionManager.getSelection();
       console.log('Current selection:', currentSelection);
+      const currentImages = this.imageManager?.hasImage() ? [this.imageManager.getCurrentImageData()] : [];
       
       // Add user message to conversation and UI (without system prompt)
-      this.conversationManager.addMessage(message, true, currentSelection);
+      this.conversationManager.addMessage(message, true, currentSelection, currentImages);
       this.uiManager.addMessage(message, true, currentSelection);
       this.uiManager.clearInput();
 
@@ -139,9 +149,12 @@ export class LLMChatApp {
       await this.sendToLLM(message, currentSelection);
 
     } catch (error) {
-      // ...existing error handling...
-      Utils.logError && Utils.logError('LLMChatApp.handleSendMessage', error);
-      this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      console.error('Error in handleSendMessage:', error);
+      Utils.logError('LLMChatApp.handleSendMessage', error);
+      
+      if (this.uiManager.showError) {
+        this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      }
     } finally {
       this.isSendingMessage = false;
       this.uiManager.setSendButtonState(true);
@@ -165,9 +178,10 @@ export class LLMChatApp {
       this.uiManager.setSendButtonState(false);
 
       const currentSelection = await this.selectionManager.getSelection();
+      const currentImages = this.imageManager?.hasImage() ? [this.imageManager.getCurrentImageData()] : [];
       
       // Add user message to conversation and optionally to UI
-      this.conversationManager.addMessage(message, true, currentSelection);
+      this.conversationManager.addMessage(message, true, currentSelection, currentImages);
       if (addToUI) {
         this.uiManager.addMessage(message, true, currentSelection);
         this.uiManager.clearInput();
@@ -177,8 +191,12 @@ export class LLMChatApp {
       await this.sendToLLM(message, currentSelection);
 
     } catch (error) {
-      Utils.logError && Utils.logError('LLMChatApp.sendMessage', error);
-      this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      console.error('Error in sendMessage:', error);
+      Utils.logError('LLMChatApp.sendMessage', error);
+      
+      if (this.uiManager.showError) {
+        this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      }
       throw error;
     } finally {
       this.isSendingMessage = false;
@@ -204,18 +222,23 @@ export class LLMChatApp {
       this.uiManager.setSendButtonState(false);
 
       const currentSelection = await this.selectionManager.getSelection();
+      const currentImages = this.imageManager?.hasImage() ? [this.imageManager.getCurrentImageData()] : [];
       
       // Add display message to conversation history (not the full prompt)
       // UI는 caller에서 이미 추가되었으므로 여기서는 conversation history에만 추가
-      this.conversationManager.addMessage(displayMessage, true, currentSelection);
+      this.conversationManager.addMessage(displayMessage, true, currentSelection, currentImages);
 
       // Send actual message to LLM - actualMessage already contains the full prompt
       // so we don't need to add selection again
       await this.sendToLLM(actualMessage, '');
 
     } catch (error) {
-      Utils.logError && Utils.logError('LLMChatApp.sendMessageRaw', error);
-      this.uiManager.showError && this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      console.error('Error in sendMessageRaw:', error);
+      Utils.logError('LLMChatApp.sendMessageRaw', error);
+      
+      if (this.uiManager.showError) {
+        this.uiManager.showError(APP_CONSTANTS.DEFAULT_MESSAGES.ERROR_SENDING_MESSAGE);
+      }
       throw error;
     } finally {
       this.isSendingMessage = false;
@@ -231,6 +254,8 @@ export class LLMChatApp {
     console.log('--- sendToLLM called ---');
     console.log('Original message:', message);
     console.log('Selection:', selection);
+    console.log('ImageManager available:', !!this.imageManager);
+    console.log('Has image:', this.imageManager?.hasImage());
 
     const loadingElement = this.uiManager.showLoading();
     let assistantMessage = '';
@@ -238,13 +263,48 @@ export class LLMChatApp {
 
     try {
       const conversationHistory = this.conversationManager.getFormattedHistory();
+      console.log('Conversation history length:', conversationHistory.length);
+      
+      // Check if there's an image to include
+      const imageData = this.imageManager?.getCurrentImageData();
+      console.log('Image data:', imageData ? 'Present' : 'None');
+      
+      // Prepare final message content
+      let finalMessage = message;
+      if (imageData) {
+        // If we have an image, create multimodal content array
+        finalMessage = [
+          imageData,
+          { type: 'text', text: message }
+        ];
+        console.log('Sending message with image:', imageData.image ? imageData.image.substring(0, 50) + '...' : 'Image data present');
+      }
 
       // 선택된 텍스트가 있으면 메시지에 포함
-      let messageToSend = message;
+      let messageToSend = finalMessage;
       if (selection && selection.trim()) {
-        messageToSend = `${message}\n\n[Selected text context]:\n${selection}`;
+        if (Array.isArray(finalMessage)) {
+          // If we have multimodal content (with image), update the text part
+          messageToSend = [
+            finalMessage[0], // image data
+            { type: 'text', text: `${message}\n\n[Selected text context]:\n${selection}` }
+          ];
+        } else {
+          // If no image, just add selection context to text
+          messageToSend = `${message}\n\n[Selected text context]:\n${selection}`;
+        }
       }
-      console.log('Message to send to LLM:', messageToSend);
+      console.log('Message to send to LLM:', Array.isArray(messageToSend) ? 'Multimodal content with image' : messageToSend);
+
+      // Update the last user message in conversation history with the multimodal content
+      // This ensures the exact content sent to LLM is stored
+      if (Array.isArray(messageToSend)) {
+        const history = this.conversationManager.getHistory();
+        if (history.length > 0 && history[history.length - 1].isUser) {
+          history[history.length - 1].content = messageToSend;
+          // Note: saveConversationHistory will be called by the manager
+        }
+      }
 
       await this.llmManager.sendMessage(
         messageToSend,
@@ -273,6 +333,11 @@ export class LLMChatApp {
           
           // Reset selection mode after successful response
           this.selectionManager.setSelectionMode(false);
+          
+          // Remove image after successful message
+          if (this.imageManager?.hasImage()) {
+            this.imageManager.removeImage();
+          }
         },
         
         // onError callback
@@ -282,10 +347,20 @@ export class LLMChatApp {
       );
 
     } catch (error) {
+      console.error('Error in sendToLLM:', error);
       this.uiManager.hideLoading();
       if (messageElement) {
         messageElement.remove();
       }
+      
+      // Log detailed error information
+      Utils.logError('LLMChatApp.sendToLLM', error, {
+        message: typeof message === 'string' ? message.substring(0, 100) : 'Multimodal content',
+        hasSelection: !!selection,
+        hasImage: this.imageManager?.hasImage() || false,
+        conversationLength: this.conversationManager?.getFormattedHistory()?.length || 0
+      });
+      
       throw error;
     }
   }
@@ -353,8 +428,10 @@ export class LLMChatApp {
     const { action, prompt, selection } = event.detail;
     
     try {
+      const currentImages = this.imageManager?.hasImage() ? [this.imageManager.getCurrentImageData()] : [];
+      
       // Add the action message to conversation (with full prompt for LLM)
-      this.conversationManager.addMessage(prompt, true, selection);
+      this.conversationManager.addMessage(prompt, true, selection, currentImages);
       
       // UI에는 간단한 메시지만 표시
       const actionText = action === 'summarize' ? '📝 요약 요청' : '🌐 번역 요청';
@@ -481,5 +558,30 @@ export class LLMChatApp {
       Utils.logError('LLMChatApp.handleLanguageChanged', error);
       this.uiManager.showError('Failed to change language');
     }
+  }
+
+  /**
+   * Handle image uploaded event
+   */
+  handleImageUploaded(event) {
+    const { image } = event.detail;
+    console.log('Image uploaded:', image.name);
+    
+    this.uiManager.updateState({
+      hasImage: true,
+      imageInfo: image
+    });
+  }
+
+  /**
+   * Handle image removed event
+   */
+  handleImageRemoved(event) {
+    console.log('Image removed');
+    
+    this.uiManager.updateState({
+      hasImage: false,
+      imageInfo: null
+    });
   }
 }
