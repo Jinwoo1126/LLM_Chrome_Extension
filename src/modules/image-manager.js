@@ -283,7 +283,7 @@ export class ImageManager {
     const removeBtn = document.createElement('button');
     removeBtn.id = 'remove-image';
     removeBtn.className = 'remove-image-button';
-    removeBtn.innerHTML = '🗑️ Remove';
+    removeBtn.innerHTML = '×';
     removeBtn.title = '이미지 제거';
     removeBtn.addEventListener('click', this.removeImage.bind(this));
 

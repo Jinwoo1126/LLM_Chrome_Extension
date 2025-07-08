@@ -334,10 +334,7 @@ export class LLMChatApp {
           // Reset selection mode after successful response
           this.selectionManager.setSelectionMode(false);
           
-          // Remove image after successful message
-          if (this.imageManager?.hasImage()) {
-            this.imageManager.removeImage();
-          }
+          // Keep image for reuse - user can manually remove via X button
         },
         
         // onError callback
