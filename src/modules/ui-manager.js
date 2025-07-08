@@ -217,7 +217,7 @@ export class UIManager {
       className: 'message-selection-icon'
     }, '▼');
 
-    const labelSpan = DOMUtils.createElement('span', {}, 'Selected text');
+    const labelSpan = DOMUtils.createElement('span', {}, 'Selected Box');
 
     headerDiv.appendChild(iconSpan);
     headerDiv.appendChild(labelSpan);

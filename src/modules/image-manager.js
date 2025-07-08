@@ -230,11 +230,7 @@ export class ImageManager {
     // Show selection info area
     this.elements.selectionInfo.classList.remove('hidden');
     
-    // Update selection header
-    const selectionHeaderLeft = this.elements.selectionInfo.querySelector('.selection-header-left span');
-    if (selectionHeaderLeft) {
-      selectionHeaderLeft.textContent = 'Uploaded Image';
-    }
+    // 헤더는 그대로 유지 - "Selected Box"가 "Uploaded Image"로 바뀌지 않도록 함
 
     // Create or update image preview
     this.createImagePreviewElement();

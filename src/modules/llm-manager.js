@@ -257,6 +257,11 @@ export class LLMManager {
         return { content: '', done: true };
       }
       
+      // Skip empty data lines
+      if (!dataStr) {
+        return null;
+      }
+      
       try {
         const data = JSON.parse(dataStr);
         const delta = data.choices?.[0]?.delta;
@@ -274,35 +279,40 @@ export class LLMManager {
     }
     
     // Handle direct JSON format (fallback for legacy Ollama)
-    try {
-      const data = JSON.parse(line);
-      
-      // Ollama native format
-      if (data.message) {
-        return {
-          content: data.message?.content || '',
-          done: data.done || false,
-          model: data.model,
-          created_at: data.created_at
-        };
+    if (line.trim().startsWith('{') && line.trim().endsWith('}')) {
+      try {
+        const data = JSON.parse(line);
+        
+        // Ollama native format
+        if (data.message) {
+          return {
+            content: data.message?.content || '',
+            done: data.done || false,
+            model: data.model,
+            created_at: data.created_at
+          };
+        }
+        
+        // OpenAI format
+        if (data.choices) {
+          const delta = data.choices[0]?.delta;
+          return {
+            content: delta?.content || '',
+            done: data.choices[0]?.finish_reason !== null,
+            model: data.model,
+            id: data.id
+          };
+        }
+        
+        return null;
+      } catch (error) {
+        console.warn('Failed to parse JSON chunk:', line);
+        return null;
       }
-      
-      // OpenAI format
-      if (data.choices) {
-        const delta = data.choices[0]?.delta;
-        return {
-          content: delta?.content || '',
-          done: data.choices[0]?.finish_reason !== null,
-          model: data.model,
-          id: data.id
-        };
-      }
-      
-      return null;
-    } catch (error) {
-      console.warn('Failed to parse JSON chunk:', line);
-      return null;
     }
+    
+    // Skip lines that are not valid SSE or JSON
+    return null;
   }
 
   /**
