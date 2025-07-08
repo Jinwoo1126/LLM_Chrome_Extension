@@ -251,13 +251,24 @@ export class ImageManager {
 
     // Create image preview container
     const imageContainer = document.createElement('div');
-    imageContainer.className = 'image-preview-container';
+    imageContainer.className = 'image-preview-container compact';
     
     // Create image element
     const img = document.createElement('img');
     img.src = this.currentImage.dataUrl;
     img.className = 'image-preview';
     img.alt = this.currentImage.name;
+    img.title = '클릭하여 크기 조절';
+    
+    // Add click handler for size toggle
+    img.addEventListener('click', () => {
+      imageContainer.classList.toggle('compact');
+      if (imageContainer.classList.contains('compact')) {
+        img.title = '클릭하여 확대';
+      } else {
+        img.title = '클릭하여 축소';
+      }
+    });
     
     // Create image info
     const imageInfo = document.createElement('div');
@@ -265,6 +276,7 @@ export class ImageManager {
     imageInfo.innerHTML = `
       <span class="image-name">${this.currentImage.name}</span>
       <span class="image-size">${this.formatFileSize(this.currentImage.size)}</span>
+      <span class="image-hint">클릭하여 크기 조절</span>
     `;
 
     // Create remove button
